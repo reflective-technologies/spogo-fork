@@ -179,14 +179,23 @@ func (c *ConnectClient) albumInfo(ctx context.Context, id string) (Item, error) 
 	if locale == "" {
 		locale = ""
 	}
-	item, err := c.infoByOperation(ctx, "getAlbum", map[string]any{
+
+	payload, err := c.graphQL(ctx, "getAlbum", map[string]any{
 		"uri":    "spotify:album:" + id,
 		"locale": locale,
 		"offset": 0,
 		"limit":  50,
-	}, "album")
+	})
 	if err == nil {
-		return item, nil
+		if item, ok := extractAlbumFromPathfinder(payload); ok {
+			return item, nil
+		}
+		// Fallback to the generic extractor (may miss tracks/date, but keeps behavior stable
+		// across evolving response shapes).
+		if item, ok := extractItemFromPayload(payload, "album"); ok {
+			return item, nil
+		}
+		return Item{}, errors.New("no album found")
 	}
 	web, ferr := c.webClient()
 	if ferr != nil {
@@ -197,6 +206,149 @@ func (c *ConnectClient) albumInfo(ctx context.Context, id string) (Item, error) 
 		return item, nil
 	}
 	return Item{}, fmt.Errorf("connect album info failed (%v); web fallback failed (%v)", err, werr)
+}
+
+func extractAlbumFromPathfinder(payload map[string]any) (Item, bool) {
+	data, ok := payload["data"].(map[string]any)
+	if !ok {
+		return Item{}, false
+	}
+	album, ok := data["albumUnion"].(map[string]any)
+	if !ok {
+		album, ok = data["album"].(map[string]any)
+		if !ok {
+			return Item{}, false
+		}
+	}
+	uri := getString(album, "uri")
+	if uri == "" || !strings.HasPrefix(uri, "spotify:album:") {
+		return Item{}, false
+	}
+	item := Item{
+		URI:  uri,
+		ID:   idFromURI(uri),
+		Name: getString(album, "name"),
+		Type: "album",
+	}
+	item.URL = fmt.Sprintf("https://open.spotify.com/album/%s", item.ID)
+
+	if artists, ok := album["artists"].(map[string]any); ok {
+		if list, ok := artists["items"].([]any); ok {
+			for _, entry := range list {
+				if m, ok := entry.(map[string]any); ok {
+					if name := extractProfileName(m); name != "" {
+						item.Artists = append(item.Artists, name)
+					}
+				}
+			}
+		}
+	}
+
+	if date, ok := album["date"].(map[string]any); ok {
+		item.ReleaseDate = formatPathfinderDate(date)
+	}
+
+	if tracksV2, ok := album["tracksV2"].(map[string]any); ok {
+		item.TotalTracks = getInt(tracksV2, "totalCount")
+		if item.TotalTracks == 0 {
+			item.TotalTracks = getInt(tracksV2, "totalTracks")
+		}
+		if list, ok := tracksV2["items"].([]any); ok {
+			tracks := make([]Item, 0, len(list))
+			for _, entry := range list {
+				m, ok := entry.(map[string]any)
+				if !ok {
+					continue
+				}
+				track, ok := m["track"].(map[string]any)
+				if !ok {
+					continue
+				}
+				t := mapPathfinderTrack(track)
+				if t.ID != "" {
+					tracks = append(tracks, t)
+				}
+			}
+			item.Tracks = tracks
+			if item.TotalTracks == 0 {
+				item.TotalTracks = len(tracks)
+			}
+		}
+	}
+
+	return item, true
+}
+
+func extractProfileName(value map[string]any) string {
+	if name := getString(value, "name"); name != "" {
+		return name
+	}
+	if profile, ok := value["profile"].(map[string]any); ok {
+		if name := getString(profile, "name"); name != "" {
+			return name
+		}
+	}
+	if data, ok := value["data"].(map[string]any); ok {
+		if name := getString(data, "name"); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func formatPathfinderDate(date map[string]any) string {
+	iso := getString(date, "isoString")
+	if iso == "" {
+		return ""
+	}
+	precision := strings.ToUpper(getString(date, "precision"))
+	switch precision {
+	case "YEAR":
+		if len(iso) >= 4 {
+			return iso[:4]
+		}
+	case "MONTH":
+		if len(iso) >= 7 {
+			return iso[:7]
+		}
+	case "DAY":
+		if len(iso) >= 10 {
+			return iso[:10]
+		}
+	}
+	if len(iso) >= 10 {
+		return iso[:10]
+	}
+	return iso
+}
+
+func mapPathfinderTrack(track map[string]any) Item {
+	uri := getString(track, "uri")
+	if uri == "" || !strings.HasPrefix(uri, "spotify:track:") {
+		return Item{}
+	}
+	item := Item{
+		URI:  uri,
+		ID:   idFromURI(uri),
+		Name: getString(track, "name"),
+		Type: "track",
+	}
+	item.URL = fmt.Sprintf("https://open.spotify.com/track/%s", item.ID)
+	if duration, ok := track["duration"].(map[string]any); ok {
+		item.DurationMS = getInt(duration, "totalMilliseconds")
+	}
+	if artists, ok := track["artists"].(map[string]any); ok {
+		if list, ok := artists["items"].([]any); ok {
+			for _, entry := range list {
+				if m, ok := entry.(map[string]any); ok {
+					if name := extractProfileName(m); name != "" {
+						item.Artists = append(item.Artists, name)
+					}
+				}
+			}
+		}
+	}
+	return item
 }
 
 func (c *ConnectClient) artistInfo(ctx context.Context, id string) (Item, error) {

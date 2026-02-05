@@ -20,6 +20,7 @@ type Item struct {
 	IsPlayable    bool     `json:"is_playable,omitempty"`
 	Publisher     string   `json:"publisher,omitempty"`
 	TotalEpisodes int      `json:"total_episodes,omitempty"`
+	Tracks        []Item   `json:"tracks,omitempty"`
 }
 
 type SearchResult struct {
