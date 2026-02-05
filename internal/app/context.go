@@ -212,6 +212,15 @@ func (c *Context) cookieSource() (cookies.Source, error) {
 	if c.Profile.CookiePath != "" {
 		return cookies.FileSource{Path: c.Profile.CookiePath}, nil
 	}
+	// Prefer the resolved cookie cache path (created by `spogo auth import` and
+	// used by `spogo auth status`) over browser extraction. This keeps runtime
+	// behavior consistent with auth commands and avoids needing direct browser
+	// cookie access in headless/CI environments.
+	if resolved := c.ResolveCookiePath(); strings.TrimSpace(resolved) != "" {
+		if _, err := os.Stat(resolved); err == nil {
+			return cookies.FileSource{Path: resolved}, nil
+		}
+	}
 	browser := c.Profile.Browser
 	if strings.TrimSpace(browser) == "" {
 		browser = "chrome"
