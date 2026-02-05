@@ -41,6 +41,7 @@ type SpotifyMock struct {
 	CreatePlaylistFn  func(context.Context, string, bool, bool) (spotify.Item, error)
 	AddTracksFn       func(context.Context, string, []string) error
 	RemoveTracksFn    func(context.Context, string, []string) error
+	RecentlyPlayedFn  func(context.Context, int) ([]spotify.RecentItem, error)
 }
 
 func (m *SpotifyMock) Search(ctx context.Context, kind, query string, limit, offset int) (spotify.SearchResult, error) {
@@ -258,4 +259,11 @@ func (m *SpotifyMock) RemoveTracks(ctx context.Context, playlistID string, uris 
 		return ErrNotImplemented
 	}
 	return m.RemoveTracksFn(ctx, playlistID, uris)
+}
+
+func (m *SpotifyMock) RecentlyPlayed(ctx context.Context, limit int) ([]spotify.RecentItem, error) {
+	if m.RecentlyPlayedFn == nil {
+		return nil, ErrNotImplemented
+	}
+	return m.RecentlyPlayedFn(ctx, limit)
 }

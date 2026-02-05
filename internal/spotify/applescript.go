@@ -298,3 +298,10 @@ func (c *AppleScriptClient) RemoveTracks(ctx context.Context, playlistID string,
 	}
 	return ErrUnsupported
 }
+
+func (c *AppleScriptClient) RecentlyPlayed(ctx context.Context, limit int) ([]RecentItem, error) {
+	if c.fallback != nil {
+		return c.fallback.RecentlyPlayed(ctx, limit)
+	}
+	return nil, ErrUnsupported
+}

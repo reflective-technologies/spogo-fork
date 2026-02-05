@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -126,13 +128,14 @@ func (h *hashResolver) fetchWebPlayerHTML(ctx context.Context) (string, error) {
 		return "", err
 	}
 	req.Header.Set("User-Agent", defaultUserAgent())
-	resp, err := h.client.Do(req)
+	client := h.clientWithCookies(ctx)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", apiErrorFromResponse(resp)
+		return "", fmt.Errorf("hash fetch https://open.spotify.com/: %w", apiErrorFromResponse(resp))
 	}
 	body, err := readAll(resp)
 	if err != nil {
@@ -147,19 +150,42 @@ func (h *hashResolver) fetchText(ctx context.Context, url string) (string, error
 		return "", err
 	}
 	req.Header.Set("User-Agent", defaultUserAgent())
-	resp, err := h.client.Do(req)
+	client := h.clientWithCookies(ctx)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", apiErrorFromResponse(resp)
+		return "", fmt.Errorf("hash fetch %s: %w", url, apiErrorFromResponse(resp))
 	}
 	body, err := readAll(resp)
 	if err != nil {
 		return "", err
 	}
 	return string(body), nil
+}
+
+func (h *hashResolver) clientWithCookies(ctx context.Context) *http.Client {
+	// Hash discovery can require fetching many JS chunks. Doing that without cookies gets
+	// us intermittently blocked (often surfaced as 429). Use the same cookie source that
+	// backs connect auth so requests look like a normal logged-in web player session.
+	if h.session == nil || h.session.source == nil {
+		return h.client
+	}
+	cookiesList, err := h.session.source.Cookies(ctx)
+	if err != nil || len(cookiesList) == 0 {
+		return h.client
+	}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return h.client
+	}
+	baseURL, _ := url.Parse("https://open.spotify.com/")
+	jar.SetCookies(baseURL, cookiesList)
+	client := *h.client
+	client.Jar = jar
+	return &client
 }
 
 func pickWebPlayerBundle(html string) (string, error) {

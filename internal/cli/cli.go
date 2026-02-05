@@ -40,6 +40,7 @@ type CLI struct {
 
 	Queue   QueueCmd   `kong:"cmd,help='Queue operations.'"`
 	Library LibraryCmd `kong:"cmd,help='Library operations.'"`
+	History HistoryCmd `kong:"cmd,help='Recently played tracks.'"`
 	Device  DeviceCmd  `kong:"cmd,help='Playback devices.'"`
 }
 

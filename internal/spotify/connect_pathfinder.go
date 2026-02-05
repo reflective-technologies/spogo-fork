@@ -1,18 +1,23 @@
 package spotify
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"net/http"
 	"net/url"
 	"strings"
 )
 
-const pathfinderURL = "https://api-partner.spotify.com/pathfinder/v1/query"
+const pathfinderURL = "https://api-partner.spotify.com/pathfinder/v2/query"
 
 func (c *ConnectClient) graphQL(ctx context.Context, operation string, variables map[string]any) (map[string]any, error) {
+	if c.session == nil {
+		return nil, errors.New("connect session not initialized")
+	}
 	auth, err := c.session.auth(ctx)
 	if err != nil {
 		return nil, err
@@ -21,8 +26,9 @@ func (c *ConnectClient) graphQL(ctx context.Context, operation string, variables
 	if err != nil {
 		return nil, err
 	}
-	params := url.Values{}
-	params.Set("operationName", operation)
+	if os.Getenv("SPOGO_DEBUG_DUMP") != "" {
+		_ = os.WriteFile("/tmp/spogo-hash-"+operation+".txt", []byte(hash+"\n"), 0o600)
+	}
 	if variables == nil {
 		variables = map[string]any{}
 	}
@@ -30,7 +36,7 @@ func (c *ConnectClient) graphQL(ctx context.Context, operation string, variables
 	if err != nil {
 		return nil, err
 	}
-	extensionsJSON, err := json.Marshal(map[string]any{
+	extensions, err := json.Marshal(map[string]any{
 		"persistedQuery": map[string]any{
 			"version":    1,
 			"sha256Hash": hash,
@@ -39,17 +45,28 @@ func (c *ConnectClient) graphQL(ctx context.Context, operation string, variables
 	if err != nil {
 		return nil, err
 	}
-	params.Set("variables", string(variablesJSON))
-	params.Set("extensions", string(extensionsJSON))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, pathfinderURL+"?"+params.Encode(), nil)
+
+	// Web Player uses POST with a JSON body (not query params) for v2.
+	body, err := json.Marshal(map[string]any{
+		"operationName": operation,
+		"variables":     json.RawMessage(variablesJSON),
+		"extensions":    json.RawMessage(extensions),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, pathfinderURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+auth.AccessToken)
 	req.Header.Set("Client-Token", auth.ClientToken)
-	req.Header.Set("Spotify-App-Version", auth.ClientVersion)
+	req.Header.Set("spotify-app-version", auth.ClientVersion)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json;charset=UTF-8")
 	req.Header.Set("User-Agent", defaultUserAgent())
+	req.Header.Set("Referer", "https://open.spotify.com/")
 	if c.language != "" {
 		req.Header.Set("Accept-Language", c.language)
 	}
@@ -64,11 +81,21 @@ func (c *ConnectClient) graphQL(ctx context.Context, operation string, variables
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, apiErrorFromResponse(resp)
+		return nil, fmt.Errorf("pathfinder %s: %w", operation, apiErrorFromResponse(resp))
 	}
 	var payload map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, err
+	}
+	if os.Getenv("SPOGO_DEBUG_DUMP") != "" {
+		switch operation {
+		case "getAlbum", "getTrack", "fetchLibraryTracks", "libraryV3", "fetchEntitiesForRecentlyPlayed", "recents":
+			// Payload is public metadata; dumping it is safe and helps keep the connect extractors aligned
+			// with WebPlayer pathfinder response shapes.
+			if b, err := json.MarshalIndent(payload, "", "  "); err == nil {
+				_ = os.WriteFile("/tmp/spogo-pathfinder-"+operation+".json", b, 0o600)
+			}
+		}
 	}
 	if err := pathfinderError(payload); err != nil {
 		return nil, err
@@ -147,7 +174,17 @@ func (c *ConnectClient) trackInfo(ctx context.Context, id string) (Item, error) 
 }
 
 func (c *ConnectClient) albumInfo(ctx context.Context, id string) (Item, error) {
-	item, err := c.infoByOperation(ctx, "getAlbum", map[string]any{"uri": "spotify:album:" + id}, "album")
+	// WebPlayer getAlbum requires pagination + locale variables; sending only `uri` can yield 500s.
+	locale := c.language
+	if locale == "" {
+		locale = ""
+	}
+	item, err := c.infoByOperation(ctx, "getAlbum", map[string]any{
+		"uri":    "spotify:album:" + id,
+		"locale": locale,
+		"offset": 0,
+		"limit":  50,
+	}, "album")
 	if err == nil {
 		return item, nil
 	}
@@ -155,7 +192,11 @@ func (c *ConnectClient) albumInfo(ctx context.Context, id string) (Item, error) 
 	if ferr != nil {
 		return Item{}, err
 	}
-	return web.GetAlbum(ctx, id)
+	item, werr := web.GetAlbum(ctx, id)
+	if werr == nil {
+		return item, nil
+	}
+	return Item{}, fmt.Errorf("connect album info failed (%v); web fallback failed (%v)", err, werr)
 }
 
 func (c *ConnectClient) artistInfo(ctx context.Context, id string) (Item, error) {
@@ -316,7 +357,7 @@ func (c *ConnectClient) webClient() (*Client, error) {
 	if c.web != nil {
 		return c.web, nil
 	}
-	provider := CookieTokenProvider{Source: c.source, Client: c.client}
+	provider := connectTokenProvider{session: c.session}
 	client, err := NewClient(Options{
 		TokenProvider: provider,
 		HTTPClient:    c.client,

@@ -52,3 +52,8 @@ type Queue struct {
 	CurrentlyPlaying *Item  `json:"currently_playing,omitempty"`
 	Queue            []Item `json:"queue"`
 }
+
+type RecentItem struct {
+	Track    Item   `json:"track"`
+	PlayedAt string `json:"played_at"`
+}

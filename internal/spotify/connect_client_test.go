@@ -2,6 +2,7 @@ package spotify
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 )
@@ -38,7 +39,11 @@ func TestConnectInfoOperations(t *testing.T) {
 		},
 	}
 	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		op := req.URL.Query().Get("operationName")
+		var body struct {
+			OperationName string `json:"operationName"`
+		}
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		op := body.OperationName
 		payload, ok := payloads[op]
 		if !ok {
 			return textResponse(http.StatusNotFound, "missing"), nil
@@ -77,10 +82,10 @@ func TestConnectUnsupported(t *testing.T) {
 	if _, _, err := client.LibraryAlbums(context.Background(), 1, 0); err == nil {
 		t.Fatalf("expected error")
 	}
-	if err := client.LibraryModify(context.Background(), "", nil, ""); err == nil {
+	if err := client.LibraryModify(context.Background(), "/me/tracks", []string{"t1"}, http.MethodPut); err == nil {
 		t.Fatalf("expected error")
 	}
-	if err := client.FollowArtists(context.Background(), nil, ""); err == nil {
+	if err := client.FollowArtists(context.Background(), []string{"a1"}, http.MethodPut); err == nil {
 		t.Fatalf("expected error")
 	}
 	if _, _, _, err := client.FollowedArtists(context.Background(), 1, ""); err == nil {
@@ -95,10 +100,11 @@ func TestConnectUnsupported(t *testing.T) {
 	if _, err := client.CreatePlaylist(context.Background(), "name", false, false); err == nil {
 		t.Fatalf("expected error")
 	}
-	if err := client.AddTracks(context.Background(), "p1", nil); err == nil {
-		t.Fatalf("expected error")
+	// Empty modifications are treated as no-ops.
+	if err := client.AddTracks(context.Background(), "p1", nil); err != nil {
+		t.Fatalf("expected no-op, got error: %v", err)
 	}
-	if err := client.RemoveTracks(context.Background(), "p1", nil); err == nil {
-		t.Fatalf("expected error")
+	if err := client.RemoveTracks(context.Background(), "p1", nil); err != nil {
+		t.Fatalf("expected no-op, got error: %v", err)
 	}
 }

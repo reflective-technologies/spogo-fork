@@ -159,3 +159,10 @@ type artistsContainer struct {
 type artistTopTracksResponse struct {
 	Tracks []trackItem `json:"tracks"`
 }
+
+type recentlyPlayedResponse struct {
+	Items []struct {
+		Track    trackItem `json:"track"`
+		PlayedAt string    `json:"played_at"`
+	} `json:"items"`
+}

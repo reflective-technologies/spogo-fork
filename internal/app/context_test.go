@@ -303,3 +303,6 @@ func (dummySpotify) CreatePlaylist(context.Context, string, bool, bool) (spotify
 }
 func (dummySpotify) AddTracks(context.Context, string, []string) error    { return nil }
 func (dummySpotify) RemoveTracks(context.Context, string, []string) error { return nil }
+func (dummySpotify) RecentlyPlayed(context.Context, int) ([]spotify.RecentItem, error) {
+	return nil, nil
+}

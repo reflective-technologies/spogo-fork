@@ -409,3 +409,20 @@ func (c *Client) currentUserID(ctx context.Context) (string, error) {
 	}
 	return raw.ID, nil
 }
+
+func (c *Client) RecentlyPlayed(ctx context.Context, limit int) ([]RecentItem, error) {
+	params := url.Values{}
+	params.Set("limit", fmt.Sprint(limit))
+	var raw recentlyPlayedResponse
+	if err := c.get(ctx, "/me/player/recently-played", params, &raw); err != nil {
+		return nil, err
+	}
+	items := make([]RecentItem, 0, len(raw.Items))
+	for _, item := range raw.Items {
+		items = append(items, RecentItem{
+			Track:    mapTrack(item.Track),
+			PlayedAt: item.PlayedAt,
+		})
+	}
+	return items, nil
+}

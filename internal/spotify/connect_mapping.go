@@ -100,8 +100,14 @@ func extractItem(value any, kind string) (Item, bool) {
 		return Item{}, false
 	}
 	uri := getString(m, "uri")
+	if uri == "" {
+		// Many WebPlayer pathfinder payloads use `_uri` (not `uri`).
+		uri = getString(m, "_uri")
+	}
 	if uri == "" && kind != "" {
-		if id := getString(m, "id"); id != "" {
+		// Some payloads include only an id. Only synthesize URIs for real Spotify ids
+		// to avoid false-positives like "Recents", "Playlists", etc.
+		if id := getString(m, "id"); isSpotifyID(id) {
 			uri = "spotify:" + kind + ":" + id
 		}
 	}
@@ -119,6 +125,15 @@ func extractItem(value any, kind string) (Item, bool) {
 	name := getString(m, "name")
 	if name == "" {
 		name = getString(m, "title")
+	}
+	if name == "" {
+		// Many pathfinder wrappers keep the human-readable name under `data.name`.
+		if data, ok := m["data"].(map[string]any); ok {
+			name = getString(data, "name")
+			if name == "" {
+				name = getString(data, "title")
+			}
+		}
 	}
 	if name == "" {
 		name = findFirstName(m)
@@ -222,6 +237,56 @@ func extractArtistNames(value any) []string {
 			for _, entry := range list {
 				if name := findFirstName(entry); name != "" {
 					artists = append(artists, name)
+				}
+			}
+		}
+		// WebPlayer track payloads commonly use:
+		//   artists: { items: [ { profile: { name } } ] }
+		if container, ok := m["artists"].(map[string]any); ok {
+			if items, ok := container["items"].([]any); ok {
+				for _, entry := range items {
+					if em, ok := entry.(map[string]any); ok {
+						if profile, ok := em["profile"].(map[string]any); ok {
+							if name := getString(profile, "name"); name != "" {
+								artists = append(artists, name)
+							}
+						}
+					}
+				}
+			}
+		}
+		// TrackUnion uses `firstArtist` + `otherArtists` containers rather than a flat `artists` field.
+		for _, key := range []string{"firstArtist", "otherArtists"} {
+			if container, ok := m[key].(map[string]any); ok {
+				if items, ok := container["items"].([]any); ok {
+					for _, entry := range items {
+						if em, ok := entry.(map[string]any); ok {
+							if profile, ok := em["profile"].(map[string]any); ok {
+								if name := getString(profile, "name"); name != "" {
+									artists = append(artists, name)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		// Some entity payloads (e.g., recents) provide artists under:
+		//   identityTrait: { contributors: { items: [{ name, uri }] } }
+		if contributors, ok := m["contributors"].(map[string]any); ok {
+			if items, ok := contributors["items"].([]any); ok {
+				for _, entry := range items {
+					em, ok := entry.(map[string]any)
+					if !ok {
+						continue
+					}
+					uri := getString(em, "uri")
+					if uri != "" && !strings.HasPrefix(uri, "spotify:artist:") {
+						continue
+					}
+					if name := getString(em, "name"); name != "" {
+						artists = append(artists, name)
+					}
 				}
 			}
 		}
@@ -355,4 +420,16 @@ func dedupeStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func isSpotifyID(id string) bool {
+	if len(id) != 22 {
+		return false
+	}
+	for _, r := range id {
+		if (r < '0' || r > '9') && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') {
+			return false
+		}
+	}
+	return true
 }

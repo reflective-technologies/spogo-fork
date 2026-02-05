@@ -247,3 +247,9 @@ func (c *autoClient) RemoveTracks(ctx context.Context, playlistID string, uris [
 		return api.RemoveTracks(ctx, playlistID, uris)
 	})
 }
+
+func (c *autoClient) RecentlyPlayed(ctx context.Context, limit int) ([]RecentItem, error) {
+	return autoCall(c, func(api API) ([]RecentItem, error) {
+		return api.RecentlyPlayed(ctx, limit)
+	})
+}

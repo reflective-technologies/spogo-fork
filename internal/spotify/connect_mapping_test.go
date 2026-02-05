@@ -32,7 +32,7 @@ func TestSearchPaths(t *testing.T) {
 
 func TestExtractItemFallbacks(t *testing.T) {
 	raw := map[string]any{
-		"id":    "t1",
+		"id":    "79D2D3dKEi4ohriGLxL55t",
 		"title": "Song",
 		"artists": []any{
 			map[string]any{"name": "Artist"},
@@ -51,7 +51,7 @@ func TestExtractItemFallbacks(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected item")
 	}
-	if item.URI != "spotify:track:t1" || item.Name != "Song" {
+	if item.URI != "spotify:track:79D2D3dKEi4ohriGLxL55t" || item.Name != "Song" {
 		t.Fatalf("unexpected item: %#v", item)
 	}
 	if len(item.Artists) != 1 || item.Artists[0] != "Artist" {

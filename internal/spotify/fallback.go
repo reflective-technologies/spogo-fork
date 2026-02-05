@@ -214,3 +214,7 @@ func (c *fallbackClient) AddTracks(ctx context.Context, playlistID string, uris 
 func (c *fallbackClient) RemoveTracks(ctx context.Context, playlistID string, uris []string) error {
 	return c.web.RemoveTracks(ctx, playlistID, uris)
 }
+
+func (c *fallbackClient) RecentlyPlayed(ctx context.Context, limit int) ([]RecentItem, error) {
+	return c.web.RecentlyPlayed(ctx, limit)
+}

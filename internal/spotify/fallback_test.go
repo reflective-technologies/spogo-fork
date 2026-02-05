@@ -15,6 +15,7 @@ type apiStub struct {
 	libraryModifyFn   func(context.Context, string, []string, string) error
 	followedArtistsFn func(context.Context, int, string) ([]Item, int, string, error)
 	artistTopTracksFn func(context.Context, string, int) ([]Item, error)
+	recentlyPlayedFn  func(context.Context, int) ([]RecentItem, error)
 }
 
 func (a apiStub) Search(ctx context.Context, kind, query string, limit, offset int) (SearchResult, error) {
@@ -194,6 +195,14 @@ func (a apiStub) AddTracks(context.Context, string, []string) error {
 func (a apiStub) RemoveTracks(context.Context, string, []string) error {
 	a.note("RemoveTracks")
 	return nil
+}
+
+func (a apiStub) RecentlyPlayed(ctx context.Context, limit int) ([]RecentItem, error) {
+	a.note("RecentlyPlayed")
+	if a.recentlyPlayedFn != nil {
+		return a.recentlyPlayedFn(ctx, limit)
+	}
+	return nil, nil
 }
 
 func (a apiStub) note(name string) {
