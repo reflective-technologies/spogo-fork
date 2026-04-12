@@ -27,6 +27,16 @@ type albumItem struct {
 	TotalTracks  int               `json:"total_tracks"`
 	Artists      []artistRef       `json:"artists"`
 	ExternalURLs map[string]string `json:"external_urls"`
+	Tracks       albumTracksPage   `json:"tracks"`
+}
+
+type albumTracksPage struct {
+	Href   string      `json:"href"`
+	Items  []trackItem `json:"items"`
+	Limit  int         `json:"limit"`
+	Offset int         `json:"offset"`
+	Total  int         `json:"total"`
+	Next   string      `json:"next"`
 }
 
 type artistRef struct {

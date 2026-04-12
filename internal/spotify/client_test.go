@@ -130,8 +130,90 @@ func TestAddTracksPayload(t *testing.T) {
 	})
 	client, closeFn := newTestClient(t, handler)
 	defer closeFn()
-	if err := client.AddTracks(context.Background(), "p1", []string{"spotify:track:t1"}); err != nil {
+	if err := client.AddTracks(
+		context.Background(),
+		"p1",
+		[]string{"spotify:track:t1"},
+		nil,
+	); err != nil {
 		t.Fatalf("add tracks: %v", err)
+	}
+}
+
+func TestAddTracksPayloadWithPosition(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(data), "\"position\":0") {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	})
+	client, closeFn := newTestClient(t, handler)
+	defer closeFn()
+	position := 0
+	if err := client.AddTracks(
+		context.Background(),
+		"p1",
+		[]string{"spotify:track:t1"},
+		&position,
+	); err != nil {
+		t.Fatalf("add tracks: %v", err)
+	}
+}
+
+func TestGetAlbumIncludesTracks(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/albums/a1" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":            "a1",
+			"uri":           "spotify:album:a1",
+			"name":          "Album",
+			"release_date":  "2024-01-01",
+			"total_tracks":  2,
+			"artists":       []map[string]any{{"name": "Artist"}},
+			"external_urls": map[string]string{"spotify": "https://open.spotify.com/album/a1"},
+			"tracks": map[string]any{
+				"total": 2,
+				"items": []map[string]any{
+					{
+						"id":            "t1",
+						"uri":           "spotify:track:t1",
+						"name":          "Song 1",
+						"duration_ms":   1000,
+						"explicit":      false,
+						"is_playable":   true,
+						"artists":       []map[string]any{{"name": "Artist"}},
+						"external_urls": map[string]string{"spotify": "https://open.spotify.com/track/t1"},
+					},
+					{
+						"id":            "t2",
+						"uri":           "spotify:track:t2",
+						"name":          "Song 2",
+						"duration_ms":   1000,
+						"explicit":      false,
+						"is_playable":   true,
+						"artists":       []map[string]any{{"name": "Artist"}},
+						"external_urls": map[string]string{"spotify": "https://open.spotify.com/track/t2"},
+					},
+				},
+			},
+		})
+	})
+	client, closeFn := newTestClient(t, handler)
+	defer closeFn()
+	item, err := client.GetAlbum(context.Background(), "a1")
+	if err != nil {
+		t.Fatalf("get album: %v", err)
+	}
+	if len(item.Tracks) != 2 {
+		t.Fatalf("expected 2 tracks, got %#v", item.Tracks)
+	}
+	if item.Tracks[0].Album != "Album" {
+		t.Fatalf("expected album name on nested tracks: %#v", item.Tracks[0])
 	}
 }
 

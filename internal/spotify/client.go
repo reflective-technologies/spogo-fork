@@ -102,7 +102,19 @@ func (c *Client) GetAlbum(ctx context.Context, id string) (Item, error) {
 	if err := c.get(ctx, "/albums/"+id, url.Values{}, &raw); err != nil {
 		return Item{}, err
 	}
-	return mapAlbum(raw), nil
+	item := mapAlbum(raw)
+	totalTracks := raw.Tracks.Total
+	if totalTracks == 0 {
+		totalTracks = raw.TotalTracks
+	}
+	for offset := len(item.Tracks); offset < totalTracks; offset += 50 {
+		page, err := c.albumTracks(ctx, id, 50, offset)
+		if err != nil {
+			return Item{}, err
+		}
+		item.Tracks = append(item.Tracks, page...)
+	}
+	return item, nil
 }
 
 func (c *Client) GetArtist(ctx context.Context, id string) (Item, error) {
@@ -383,9 +395,35 @@ func (c *Client) CreatePlaylist(ctx context.Context, name string, public, collab
 	return mapPlaylist(raw), nil
 }
 
-func (c *Client) AddTracks(ctx context.Context, playlistID string, uris []string) error {
+func (c *Client) albumTracks(ctx context.Context, id string, limit, offset int) ([]Item, error) {
+	params := url.Values{}
+	params.Set("limit", fmt.Sprint(limit))
+	params.Set("offset", fmt.Sprint(offset))
+	var raw albumTracksPage
+	if err := c.get(ctx, "/albums/"+id+"/tracks", params, &raw); err != nil {
+		return nil, err
+	}
+	items := make([]Item, 0, len(raw.Items))
+	for _, track := range raw.Items {
+		if track.ID == "" {
+			continue
+		}
+		items = append(items, mapAlbumTrack(track, ""))
+	}
+	return items, nil
+}
+
+func (c *Client) AddTracks(
+	ctx context.Context,
+	playlistID string,
+	uris []string,
+	position *int,
+) error {
 	payload := map[string]any{
 		"uris": uris,
+	}
+	if position != nil {
+		payload["position"] = *position
 	}
 	return c.postJSON(ctx, "/playlists/"+playlistID+"/tracks", payload, nil)
 }

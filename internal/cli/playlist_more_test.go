@@ -13,17 +13,57 @@ import (
 
 func TestPlaylistAddCmdInvalidPlaylist(t *testing.T) {
 	ctx, _, _ := testutil.NewTestContext(t, output.FormatPlain)
-	ctx.SetSpotify(&testutil.SpotifyMock{AddTracksFn: func(ctx context.Context, playlistID string, uris []string) error { return nil }})
-	cmd := PlaylistAddCmd{Playlist: "spotify:track:t1", Tracks: []string{"spotify:track:t1"}}
+	ctx.SetSpotify(&testutil.SpotifyMock{
+		AddTracksFn: func(
+			ctx context.Context,
+			playlistID string,
+			uris []string,
+			position *int,
+		) error {
+			return nil
+		},
+	})
+	cmd := PlaylistAddCmd{
+		Playlist: "spotify:track:t1",
+		Items:    []string{"spotify:track:t1"},
+	}
 	if err := cmd.Run(ctx); err == nil {
 		t.Fatalf("expected error")
 	}
 }
 
-func TestPlaylistAddCmdInvalidTrack(t *testing.T) {
+func TestPlaylistAddCmdRejectsUnsupportedType(t *testing.T) {
 	ctx, _, _ := testutil.NewTestContext(t, output.FormatPlain)
-	ctx.SetSpotify(&testutil.SpotifyMock{AddTracksFn: func(ctx context.Context, playlistID string, uris []string) error { return nil }})
-	cmd := PlaylistAddCmd{Playlist: "spotify:playlist:p1", Tracks: []string{"spotify:album:a1"}}
+	ctx.SetSpotify(&testutil.SpotifyMock{
+		AddTracksFn: func(
+			ctx context.Context,
+			playlistID string,
+			uris []string,
+			position *int,
+		) error {
+			return nil
+		},
+	})
+	cmd := PlaylistAddCmd{
+		Playlist: "spotify:playlist:p1",
+		Items:    []string{"spotify:artist:a1"},
+	}
+	if err := cmd.Run(ctx); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestPlaylistAddCmdAlbumWithoutTracks(t *testing.T) {
+	ctx, _, _ := testutil.NewTestContext(t, output.FormatPlain)
+	ctx.SetSpotify(&testutil.SpotifyMock{
+		GetAlbumFn: func(ctx context.Context, id string) (spotify.Item, error) {
+			return spotify.Item{ID: id, Type: "album", Name: "Album"}, nil
+		},
+	})
+	cmd := PlaylistAddCmd{
+		Playlist: "spotify:playlist:p1",
+		Items:    []string{"spotify:album:a1"},
+	}
 	if err := cmd.Run(ctx); err == nil {
 		t.Fatalf("expected error")
 	}

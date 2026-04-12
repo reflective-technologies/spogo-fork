@@ -98,7 +98,8 @@ spogo [global flags] <command> [args]
 ### playlists
 
 - `spogo playlist create <name> [--public] [--collab]`
-- `spogo playlist add <playlist> <track...>`
+- `spogo playlist add <playlist> <track-or-album...> [--position N]`
+- `spogo playlist prepend <playlist> <track-or-album...>`
 - `spogo playlist remove <playlist> <track...>`
 - `spogo playlist tracks <playlist> [--limit N]`
 

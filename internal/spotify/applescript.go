@@ -285,9 +285,14 @@ func (c *AppleScriptClient) CreatePlaylist(ctx context.Context, name string, pub
 	return Item{}, ErrUnsupported
 }
 
-func (c *AppleScriptClient) AddTracks(ctx context.Context, playlistID string, uris []string) error {
+func (c *AppleScriptClient) AddTracks(
+	ctx context.Context,
+	playlistID string,
+	uris []string,
+	position *int,
+) error {
 	if c.fallback != nil {
-		return c.fallback.AddTracks(ctx, playlistID, uris)
+		return c.fallback.AddTracks(ctx, playlistID, uris, position)
 	}
 	return ErrUnsupported
 }

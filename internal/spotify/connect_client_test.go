@@ -101,10 +101,86 @@ func TestConnectUnsupported(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 	// Empty modifications are treated as no-ops.
-	if err := client.AddTracks(context.Background(), "p1", nil); err != nil {
+	if err := client.AddTracks(context.Background(), "p1", nil, nil); err != nil {
 		t.Fatalf("expected no-op, got error: %v", err)
 	}
 	if err := client.RemoveTracks(context.Background(), "p1", nil); err != nil {
 		t.Fatalf("expected no-op, got error: %v", err)
+	}
+}
+
+func TestConnectAddTracksAppend(t *testing.T) {
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		var body struct {
+			OperationName string         `json:"operationName"`
+			Variables     map[string]any `json:"variables"`
+		}
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		if body.OperationName != "addToPlaylist" {
+			return textResponse(http.StatusNotFound, "missing"), nil
+		}
+		position, _ := body.Variables["newPosition"].(map[string]any)
+		if position["moveType"] != "BOTTOM_OF_PLAYLIST" {
+			t.Fatalf("unexpected position: %#v", position)
+		}
+		return jsonResponse(http.StatusOK, map[string]any{"data": map[string]any{}}), nil
+	})
+	client := newConnectClientForTests(transport)
+	client.hashes.hashes["addToPlaylist"] = "hash"
+	if err := client.AddTracks(
+		context.Background(),
+		"p1",
+		[]string{"spotify:track:t1"},
+		nil,
+	); err != nil {
+		t.Fatalf("add tracks: %v", err)
+	}
+}
+
+func TestConnectAddTracksBeforeUID(t *testing.T) {
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		var body struct {
+			OperationName string         `json:"operationName"`
+			Variables     map[string]any `json:"variables"`
+		}
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		switch body.OperationName {
+		case "fetchPlaylistContents":
+			payload := map[string]any{
+				"data": map[string]any{
+					"playlistV2": map[string]any{
+						"content": map[string]any{
+							"items": []any{
+								map[string]any{"uid": "uid-1"},
+							},
+						},
+					},
+				},
+			}
+			return jsonResponse(http.StatusOK, payload), nil
+		case "addToPlaylist":
+			position, _ := body.Variables["newPosition"].(map[string]any)
+			if position["moveType"] != "BEFORE_UID" {
+				t.Fatalf("unexpected moveType: %#v", position)
+			}
+			if position["fromUid"] != "uid-1" {
+				t.Fatalf("unexpected target uid: %#v", position)
+			}
+			return jsonResponse(http.StatusOK, map[string]any{"data": map[string]any{}}), nil
+		default:
+			return textResponse(http.StatusNotFound, "missing"), nil
+		}
+	})
+	client := newConnectClientForTests(transport)
+	client.hashes.hashes["fetchPlaylistContents"] = "hash"
+	client.hashes.hashes["addToPlaylist"] = "hash"
+	position := 0
+	if err := client.AddTracks(
+		context.Background(),
+		"p1",
+		[]string{"spotify:track:t1"},
+		&position,
+	); err != nil {
+		t.Fatalf("add tracks: %v", err)
 	}
 }

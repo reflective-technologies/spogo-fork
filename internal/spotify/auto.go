@@ -236,9 +236,14 @@ func (c *autoClient) CreatePlaylist(ctx context.Context, name string, public, co
 	})
 }
 
-func (c *autoClient) AddTracks(ctx context.Context, playlistID string, uris []string) error {
+func (c *autoClient) AddTracks(
+	ctx context.Context,
+	playlistID string,
+	uris []string,
+	position *int,
+) error {
 	return autoVoid(c, func(api API) error {
-		return api.AddTracks(ctx, playlistID, uris)
+		return api.AddTracks(ctx, playlistID, uris, position)
 	})
 }
 

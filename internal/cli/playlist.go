@@ -18,12 +18,18 @@ type PlaylistCreateCmd struct {
 
 type PlaylistAddCmd struct {
 	Playlist string   `arg:"" required:"" help:"Playlist ID/URL/URI."`
-	Tracks   []string `arg:"" required:"" help:"Track IDs/URLs/URIs."`
+	Items    []string `arg:"" required:"" help:"Track or album IDs/URLs/URIs."`
+	Position *int     `help:"Zero-based insertion position. Defaults to append."`
 }
 
 type PlaylistRemoveCmd struct {
 	Playlist string   `arg:"" required:"" help:"Playlist ID/URL/URI."`
 	Tracks   []string `arg:"" required:"" help:"Track IDs/URLs/URIs."`
+}
+
+type PlaylistPrependCmd struct {
+	Playlist string   `arg:"" required:"" help:"Playlist ID/URL/URI."`
+	Items    []string `arg:"" required:"" help:"Track or album IDs/URLs/URIs."`
 }
 
 type PlaylistTracksCmd struct {
@@ -47,24 +53,46 @@ func (cmd *PlaylistCreateCmd) Run(ctx *app.Context) error {
 }
 
 func (cmd *PlaylistAddCmd) Run(ctx *app.Context) error {
+	return runPlaylistAdd(ctx, cmd.Playlist, cmd.Items, cmd.Position)
+}
+
+func (cmd *PlaylistPrependCmd) Run(ctx *app.Context) error {
+	position := 0
+	return runPlaylistAdd(ctx, cmd.Playlist, cmd.Items, &position)
+}
+
+func runPlaylistAdd(
+	ctx *app.Context,
+	playlistInput string,
+	inputs []string,
+	position *int,
+) error {
 	client, err := ctx.Spotify()
 	if err != nil {
 		return err
 	}
-	playlist, err := spotify.ParseTypedID(cmd.Playlist, "playlist")
+	playlist, err := spotify.ParseTypedID(playlistInput, "playlist")
 	if err != nil {
 		return err
 	}
-	uris, err := trackURIs(cmd.Tracks)
+	uris, err := playlistItemURIs(client, inputs)
 	if err != nil {
 		return err
 	}
-	if err := client.AddTracks(context.Background(), playlist.ID, uris); err != nil {
+	if err := validatePosition(position); err != nil {
+		return err
+	}
+	if err := client.AddTracks(context.Background(), playlist.ID, uris, position); err != nil {
 		return err
 	}
 	plain := []string{"ok"}
 	human := []string{fmt.Sprintf("Added %d tracks", len(uris))}
-	return ctx.Output.Emit(map[string]any{"status": "ok", "count": len(uris)}, plain, human)
+	payload := map[string]any{"status": "ok", "count": len(uris)}
+	if position != nil {
+		human = []string{fmt.Sprintf("Added %d tracks at position %d", len(uris), *position)}
+		payload["position"] = *position
+	}
+	return ctx.Output.Emit(payload, plain, human)
 }
 
 func (cmd *PlaylistRemoveCmd) Run(ctx *app.Context) error {
@@ -108,6 +136,102 @@ func (cmd *PlaylistTracksCmd) Run(ctx *app.Context) error {
 	}
 	payload := map[string]any{"total": total, "items": items}
 	return ctx.Output.Emit(payload, plain, human)
+}
+
+func playlistItemURIs(client spotify.API, inputs []string) ([]string, error) {
+	uris := make([]string, 0, len(inputs))
+	for _, input := range inputs {
+		res, err := spotify.ParseResource(strings.TrimSpace(input))
+		if err != nil {
+			return nil, err
+		}
+		switch res.Type {
+		case "":
+			track, album, err := resolveUntypedPlaylistItem(client, res.ID)
+			if err != nil {
+				return nil, err
+			}
+			if track != nil {
+				uris = append(uris, track.URI)
+				continue
+			}
+			if album != nil {
+				albumURIs, err := albumTrackURIs(*album, input)
+				if err != nil {
+					return nil, err
+				}
+				uris = append(uris, albumURIs...)
+				continue
+			}
+			return nil, fmt.Errorf("invalid playlist item %s", input)
+		case "track":
+			res, err = spotify.ParseTypedID(strings.TrimSpace(input), "track")
+			if err != nil {
+				return nil, err
+			}
+			if res.URI == "" {
+				return nil, fmt.Errorf("invalid track input")
+			}
+			uris = append(uris, res.URI)
+		case "album":
+			album, err := client.GetAlbum(context.Background(), res.ID)
+			if err != nil {
+				return nil, err
+			}
+			albumURIs, err := albumTrackURIs(album, input)
+			if err != nil {
+				return nil, err
+			}
+			uris = append(uris, albumURIs...)
+		default:
+			return nil, fmt.Errorf("playlist add supports tracks and albums, got %s", res.Type)
+		}
+	}
+	return uris, nil
+}
+
+func resolveUntypedPlaylistItem(
+	client spotify.API,
+	id string,
+) (*spotify.Item, *spotify.Item, error) {
+	track, trackErr := client.GetTrack(context.Background(), id)
+	if trackErr == nil && track.URI != "" {
+		return &track, nil, nil
+	}
+
+	album, albumErr := client.GetAlbum(context.Background(), id)
+	if albumErr == nil && album.URI != "" {
+		return nil, &album, nil
+	}
+
+	if trackErr != nil {
+		return nil, nil, trackErr
+	}
+	if albumErr != nil {
+		return nil, nil, albumErr
+	}
+	return nil, nil, fmt.Errorf("could not resolve Spotify item %s", id)
+}
+
+func albumTrackURIs(album spotify.Item, input string) ([]string, error) {
+	if len(album.Tracks) == 0 {
+		return nil, fmt.Errorf("album %s has no playable tracks", input)
+	}
+	uris := make([]string, 0, len(album.Tracks))
+	for _, track := range album.Tracks {
+		if track.URI == "" {
+			return nil, fmt.Errorf("album %s returned an invalid track", input)
+		}
+		uris = append(uris, track.URI)
+	}
+	return uris, nil
+}
+
+func validatePosition(position *int) error {
+	if position != nil && *position < 0 {
+		return fmt.Errorf("position must be zero or greater")
+	}
+	return nil
 }
 
 func trackURIs(inputs []string) ([]string, error) {

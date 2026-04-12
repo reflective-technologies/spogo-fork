@@ -207,8 +207,13 @@ func (c *fallbackClient) CreatePlaylist(ctx context.Context, name string, public
 	return c.web.CreatePlaylist(ctx, name, public, collaborative)
 }
 
-func (c *fallbackClient) AddTracks(ctx context.Context, playlistID string, uris []string) error {
-	return c.web.AddTracks(ctx, playlistID, uris)
+func (c *fallbackClient) AddTracks(
+	ctx context.Context,
+	playlistID string,
+	uris []string,
+	position *int,
+) error {
+	return c.web.AddTracks(ctx, playlistID, uris, position)
 }
 
 func (c *fallbackClient) RemoveTracks(ctx context.Context, playlistID string, uris []string) error {

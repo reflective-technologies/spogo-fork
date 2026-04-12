@@ -83,7 +83,7 @@ Commands:
 - `play [<id|url>] [--type ...]`, `pause`, `next`, `prev`, `seek`, `volume`, `shuffle`, `repeat`, `status`
 - `queue add|show`
 - `library tracks|albums|artists|playlists`
-- `playlist create|add|remove|tracks`
+- `playlist create|add|prepend|remove|tracks`
 - `device list|set`
 
 Full spec: `docs/spec.md`.

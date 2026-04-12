@@ -419,12 +419,16 @@ func (c *ConnectClient) CreatePlaylist(ctx context.Context, name string, public,
 	}, nil
 }
 
-func (c *ConnectClient) AddTracks(ctx context.Context, playlistID string, uris []string) error {
+func (c *ConnectClient) AddTracks(
+	ctx context.Context,
+	playlistID string,
+	uris []string,
+	position *int,
+) error {
 	if len(uris) == 0 {
 		return nil
 	}
 
-	// Ensure URIs are in correct format
 	formattedURIs := make([]string, len(uris))
 	for i, uri := range uris {
 		if !strings.HasPrefix(uri, "spotify:") {
@@ -434,17 +438,78 @@ func (c *ConnectClient) AddTracks(ctx context.Context, playlistID string, uris [
 		}
 	}
 
+	newPosition, err := c.playlistInsertPosition(ctx, playlistID, position)
+	if err != nil {
+		return err
+	}
+
 	variables := map[string]any{
 		"playlistItemUris": formattedURIs,
 		"playlistUri":      "spotify:playlist:" + playlistID,
-		"newPosition": map[string]any{
-			"moveType": "BOTTOM_OF_PLAYLIST",
-			"fromUid":  nil,
-		},
+		"newPosition":      newPosition,
 	}
 
-	_, err := c.graphQL(ctx, "addToPlaylist", variables)
+	_, err = c.graphQL(ctx, "addToPlaylist", variables)
 	return err
+}
+
+func (c *ConnectClient) playlistInsertPosition(
+	ctx context.Context,
+	playlistID string,
+	position *int,
+) (map[string]any, error) {
+	if position == nil {
+		return map[string]any{
+			"moveType": "BOTTOM_OF_PLAYLIST",
+			"fromUid":  nil,
+		}, nil
+	}
+	if *position < 0 {
+		return nil, fmt.Errorf("position must be zero or greater")
+	}
+
+	targetUID, err := c.playlistTrackUIDAtOffset(ctx, playlistID, *position)
+	if err != nil {
+		return nil, err
+	}
+	if targetUID == "" {
+		return map[string]any{
+			"moveType": "BOTTOM_OF_PLAYLIST",
+			"fromUid":  nil,
+		}, nil
+	}
+
+	return map[string]any{
+		"moveType": "BEFORE_UID",
+		"fromUid":  targetUID,
+	}, nil
+}
+
+func (c *ConnectClient) playlistTrackUIDAtOffset(
+	ctx context.Context,
+	playlistID string,
+	offset int,
+) (string, error) {
+	payload, err := c.graphQL(ctx, "fetchPlaylistContents", map[string]any{
+		"uri":    "spotify:playlist:" + playlistID,
+		"offset": offset,
+		"limit":  1,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	items := extractPlaylistItems(payload)
+	if len(items) == 0 {
+		return "", nil
+	}
+
+	itemMap, ok := items[0].(map[string]any)
+	if !ok {
+		return "", nil
+	}
+	uid, _ := itemMap["uid"].(string)
+	return uid, nil
 }
 
 func (c *ConnectClient) RemoveTracks(ctx context.Context, playlistID string, uris []string) error {

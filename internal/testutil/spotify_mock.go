@@ -39,7 +39,7 @@ type SpotifyMock struct {
 	PlaylistsFn       func(context.Context, int, int) ([]spotify.Item, int, error)
 	PlaylistTracksFn  func(context.Context, string, int, int) ([]spotify.Item, int, error)
 	CreatePlaylistFn  func(context.Context, string, bool, bool) (spotify.Item, error)
-	AddTracksFn       func(context.Context, string, []string) error
+	AddTracksFn       func(context.Context, string, []string, *int) error
 	RemoveTracksFn    func(context.Context, string, []string) error
 	RecentlyPlayedFn  func(context.Context, int) ([]spotify.RecentItem, error)
 }
@@ -247,11 +247,16 @@ func (m *SpotifyMock) CreatePlaylist(ctx context.Context, name string, public, c
 	return m.CreatePlaylistFn(ctx, name, public, collaborative)
 }
 
-func (m *SpotifyMock) AddTracks(ctx context.Context, playlistID string, uris []string) error {
+func (m *SpotifyMock) AddTracks(
+	ctx context.Context,
+	playlistID string,
+	uris []string,
+	position *int,
+) error {
 	if m.AddTracksFn == nil {
 		return ErrNotImplemented
 	}
-	return m.AddTracksFn(ctx, playlistID, uris)
+	return m.AddTracksFn(ctx, playlistID, uris, position)
 }
 
 func (m *SpotifyMock) RemoveTracks(ctx context.Context, playlistID string, uris []string) error {

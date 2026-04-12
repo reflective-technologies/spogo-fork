@@ -187,7 +187,7 @@ func (a apiStub) CreatePlaylist(context.Context, string, bool, bool) (Item, erro
 	return Item{}, nil
 }
 
-func (a apiStub) AddTracks(context.Context, string, []string) error {
+func (a apiStub) AddTracks(context.Context, string, []string, *int) error {
 	a.note("AddTracks")
 	return nil
 }
@@ -420,7 +420,7 @@ func TestFallbackDelegatesToWeb(t *testing.T) {
 	if _, err := client.CreatePlaylist(ctx, "Name", true, false); err != nil {
 		t.Fatalf("create playlist: %v", err)
 	}
-	if err := client.AddTracks(ctx, "p1", []string{"spotify:track:t1"}); err != nil {
+	if err := client.AddTracks(ctx, "p1", []string{"spotify:track:t1"}, nil); err != nil {
 		t.Fatalf("add tracks: %v", err)
 	}
 	if err := client.RemoveTracks(ctx, "p1", []string{"spotify:track:t1"}); err != nil {

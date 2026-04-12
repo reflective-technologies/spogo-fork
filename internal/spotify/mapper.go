@@ -61,6 +61,10 @@ func mapTrack(t trackItem) Item {
 }
 
 func mapAlbum(a albumItem) Item {
+	tracks := make([]Item, 0, len(a.Tracks.Items))
+	for _, track := range a.Tracks.Items {
+		tracks = append(tracks, mapAlbumTrack(track, a.Name))
+	}
 	return Item{
 		ID:          a.ID,
 		URI:         a.URI,
@@ -70,7 +74,16 @@ func mapAlbum(a albumItem) Item {
 		Artists:     artistNames(a.Artists),
 		ReleaseDate: a.ReleaseDate,
 		TotalTracks: a.TotalTracks,
+		Tracks:      tracks,
 	}
+}
+
+func mapAlbumTrack(t trackItem, albumName string) Item {
+	item := mapTrack(t)
+	if item.Album == "" {
+		item.Album = albumName
+	}
+	return item
 }
 
 func mapArtist(a artistItem) Item {

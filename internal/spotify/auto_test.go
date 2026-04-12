@@ -195,7 +195,7 @@ func TestAutoPassThrough(t *testing.T) {
 	_, _, _ = client.Playlists(ctx, 1, 0)
 	_, _, _ = client.PlaylistTracks(ctx, "1", 1, 0)
 	_, _ = client.CreatePlaylist(ctx, "name", false, false)
-	_ = client.AddTracks(ctx, "1", []string{"spotify:track:1"})
+	_ = client.AddTracks(ctx, "1", []string{"spotify:track:1"}, nil)
 	_ = client.RemoveTracks(ctx, "1", []string{"spotify:track:1"})
 
 	if len(webCalls) != 0 {

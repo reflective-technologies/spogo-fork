@@ -39,7 +39,7 @@ func TestSpotifyMockAllMethods(t *testing.T) {
 		PlaylistsFn:       func(context.Context, int, int) ([]spotify.Item, int, error) { return nil, 0, nil },
 		PlaylistTracksFn:  func(context.Context, string, int, int) ([]spotify.Item, int, error) { return nil, 0, nil },
 		CreatePlaylistFn:  func(context.Context, string, bool, bool) (spotify.Item, error) { return spotify.Item{}, nil },
-		AddTracksFn:       func(context.Context, string, []string) error { return nil },
+		AddTracksFn:       func(context.Context, string, []string, *int) error { return nil },
 		RemoveTracksFn:    func(context.Context, string, []string) error { return nil },
 	}
 	_, _ = m.Search(context.Background(), "track", "q", 1, 0)
@@ -70,7 +70,7 @@ func TestSpotifyMockAllMethods(t *testing.T) {
 	_, _, _ = m.Playlists(context.Background(), 1, 0)
 	_, _, _ = m.PlaylistTracks(context.Background(), "1", 1, 0)
 	_, _ = m.CreatePlaylist(context.Background(), "name", true, false)
-	_ = m.AddTracks(context.Background(), "p", []string{"u"})
+	_ = m.AddTracks(context.Background(), "p", []string{"u"}, nil)
 	_ = m.RemoveTracks(context.Background(), "p", []string{"u"})
 }
 

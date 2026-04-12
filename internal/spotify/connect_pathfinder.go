@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -188,6 +188,15 @@ func (c *ConnectClient) albumInfo(ctx context.Context, id string) (Item, error) 
 	})
 	if err == nil {
 		if item, ok := extractAlbumFromPathfinder(payload); ok {
+			if item.TotalTracks > len(item.Tracks) {
+				web, ferr := c.webClient()
+				if ferr == nil {
+					webItem, werr := web.GetAlbum(ctx, id)
+					if werr == nil && len(webItem.Tracks) >= len(item.Tracks) {
+						return webItem, nil
+					}
+				}
+			}
 			return item, nil
 		}
 		// Fallback to the generic extractor (may miss tracks/date, but keeps behavior stable
