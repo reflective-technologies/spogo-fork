@@ -108,7 +108,7 @@ func (c *Client) GetAlbum(ctx context.Context, id string) (Item, error) {
 		totalTracks = raw.TotalTracks
 	}
 	for offset := len(item.Tracks); offset < totalTracks; offset += 50 {
-		page, err := c.albumTracks(ctx, id, 50, offset)
+		page, err := c.albumTracks(ctx, id, item.Name, 50, offset)
 		if err != nil {
 			return Item{}, err
 		}
@@ -395,7 +395,13 @@ func (c *Client) CreatePlaylist(ctx context.Context, name string, public, collab
 	return mapPlaylist(raw), nil
 }
 
-func (c *Client) albumTracks(ctx context.Context, id string, limit, offset int) ([]Item, error) {
+func (c *Client) albumTracks(
+	ctx context.Context,
+	id string,
+	albumName string,
+	limit,
+	offset int,
+) ([]Item, error) {
 	params := url.Values{}
 	params.Set("limit", fmt.Sprint(limit))
 	params.Set("offset", fmt.Sprint(offset))
@@ -408,7 +414,7 @@ func (c *Client) albumTracks(ctx context.Context, id string, limit, offset int) 
 		if track.ID == "" {
 			continue
 		}
-		items = append(items, mapAlbumTrack(track, ""))
+		items = append(items, mapAlbumTrack(track, albumName))
 	}
 	return items, nil
 }

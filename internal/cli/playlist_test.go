@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/steipete/spogo/internal/output"
@@ -160,6 +161,65 @@ func TestPlaylistPrependCmdBareAlbumID(t *testing.T) {
 	}
 	if err := cmd.Run(ctx); err != nil {
 		t.Fatalf("run: %v", err)
+	}
+}
+
+func TestPlaylistAddCmdSkipsInvalidAlbumTracks(t *testing.T) {
+	ctx, _, _ := testutil.NewTestContext(t, output.FormatPlain)
+	mock := &testutil.SpotifyMock{
+		GetAlbumFn: func(ctx context.Context, id string) (spotify.Item, error) {
+			return spotify.Item{
+				ID:   id,
+				Type: "album",
+				Name: "Album",
+				URI:  "spotify:album:" + id,
+				Tracks: []spotify.Item{
+					{ID: "bad", URI: "", Type: "track"},
+					{ID: "local", URI: "spotify:local:artist:album:song", Type: "track"},
+					{ID: "ok", URI: "spotify:track:t1", Type: "track"},
+				},
+			}, nil
+		},
+		AddTracksFn: func(
+			ctx context.Context,
+			playlistID string,
+			uris []string,
+			position *int,
+		) error {
+			if len(uris) != 1 || uris[0] != "spotify:track:t1" {
+				t.Fatalf("uris: %#v", uris)
+			}
+			return nil
+		},
+	}
+	ctx.SetSpotify(mock)
+	cmd := PlaylistAddCmd{
+		Playlist: "spotify:playlist:p1",
+		Items:    []string{"spotify:album:a1"},
+	}
+	if err := cmd.Run(ctx); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
+func TestResolveUntypedPlaylistItemReturnsCombinedError(t *testing.T) {
+	mock := &testutil.SpotifyMock{
+		GetTrackFn: func(ctx context.Context, id string) (spotify.Item, error) {
+			return spotify.Item{ID: id, Type: "track"}, nil
+		},
+		GetAlbumFn: func(ctx context.Context, id string) (spotify.Item, error) {
+			return spotify.Item{}, errors.New("album lookup failed")
+		},
+	}
+	_, _, err := resolveUntypedPlaylistItem(mock, "x1")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "track x1 has no URI") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "album lookup failed") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

@@ -184,3 +184,41 @@ func TestConnectAddTracksBeforeUID(t *testing.T) {
 		t.Fatalf("add tracks: %v", err)
 	}
 }
+
+func TestConnectAddTracksPositionOutOfRange(t *testing.T) {
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		var body struct {
+			OperationName string `json:"operationName"`
+		}
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		if body.OperationName != "fetchPlaylistContents" {
+			return textResponse(http.StatusNotFound, "missing"), nil
+		}
+		payload := map[string]any{
+			"data": map[string]any{
+				"playlistV2": map[string]any{
+					"content": map[string]any{
+						"totalCount": 1,
+						"items":      []any{},
+					},
+				},
+			},
+		}
+		return jsonResponse(http.StatusOK, payload), nil
+	})
+	client := newConnectClientForTests(transport)
+	client.hashes.hashes["fetchPlaylistContents"] = "hash"
+	position := 2
+	err := client.AddTracks(
+		context.Background(),
+		"p1",
+		[]string{"spotify:track:t1"},
+		&position,
+	)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if err.Error() != "position 2 is out of range for playlist with 1 tracks" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

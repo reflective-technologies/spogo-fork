@@ -192,7 +192,10 @@ func (c *ConnectClient) albumInfo(ctx context.Context, id string) (Item, error) 
 				web, ferr := c.webClient()
 				if ferr == nil {
 					webItem, werr := web.GetAlbum(ctx, id)
-					if werr == nil && len(webItem.Tracks) >= len(item.Tracks) {
+					if werr == nil &&
+						(len(webItem.Tracks) > len(item.Tracks) ||
+							(item.TotalTracks > 0 &&
+								len(webItem.Tracks) >= item.TotalTracks)) {
 						return webItem, nil
 					}
 				}

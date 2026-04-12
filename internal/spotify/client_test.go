@@ -217,6 +217,77 @@ func TestGetAlbumIncludesTracks(t *testing.T) {
 	}
 }
 
+func TestGetAlbumPreservesAlbumNameAcrossPages(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/albums/a1":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":            "a1",
+				"uri":           "spotify:album:a1",
+				"name":          "Album",
+				"release_date":  "2024-01-01",
+				"total_tracks":  3,
+				"artists":       []map[string]any{{"name": "Artist"}},
+				"external_urls": map[string]string{"spotify": "https://open.spotify.com/album/a1"},
+				"tracks": map[string]any{
+					"total": 3,
+					"items": []map[string]any{
+						{
+							"id":            "t1",
+							"uri":           "spotify:track:t1",
+							"name":          "Song 1",
+							"duration_ms":   1000,
+							"explicit":      false,
+							"is_playable":   true,
+							"artists":       []map[string]any{{"name": "Artist"}},
+							"external_urls": map[string]string{"spotify": "https://open.spotify.com/track/t1"},
+						},
+					},
+				},
+			})
+		case "/albums/a1/tracks":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{
+					{
+						"id":            "t2",
+						"uri":           "spotify:track:t2",
+						"name":          "Song 2",
+						"duration_ms":   1000,
+						"explicit":      false,
+						"is_playable":   true,
+						"artists":       []map[string]any{{"name": "Artist"}},
+						"external_urls": map[string]string{"spotify": "https://open.spotify.com/track/t2"},
+					},
+					{
+						"id":            "t3",
+						"uri":           "spotify:track:t3",
+						"name":          "Song 3",
+						"duration_ms":   1000,
+						"explicit":      false,
+						"is_playable":   true,
+						"artists":       []map[string]any{{"name": "Artist"}},
+						"external_urls": map[string]string{"spotify": "https://open.spotify.com/track/t3"},
+					},
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	client, closeFn := newTestClient(t, handler)
+	defer closeFn()
+	item, err := client.GetAlbum(context.Background(), "a1")
+	if err != nil {
+		t.Fatalf("get album: %v", err)
+	}
+	if len(item.Tracks) != 3 {
+		t.Fatalf("expected 3 tracks, got %#v", item.Tracks)
+	}
+	if item.Tracks[1].Album != "Album" || item.Tracks[2].Album != "Album" {
+		t.Fatalf("expected album names on paginated tracks: %#v", item.Tracks)
+	}
+}
+
 func TestPlayContextURI(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)

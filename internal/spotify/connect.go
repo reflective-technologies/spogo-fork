@@ -468,11 +468,18 @@ func (c *ConnectClient) playlistInsertPosition(
 		return nil, fmt.Errorf("position must be zero or greater")
 	}
 
-	targetUID, err := c.playlistTrackUIDAtOffset(ctx, playlistID, *position)
+	targetUID, total, err := c.playlistTrackUIDAtOffset(ctx, playlistID, *position)
 	if err != nil {
 		return nil, err
 	}
 	if targetUID == "" {
+		if *position > total {
+			return nil, fmt.Errorf(
+				"position %d is out of range for playlist with %d tracks",
+				*position,
+				total,
+			)
+		}
 		return map[string]any{
 			"moveType": "BOTTOM_OF_PLAYLIST",
 			"fromUid":  nil,
@@ -489,27 +496,28 @@ func (c *ConnectClient) playlistTrackUIDAtOffset(
 	ctx context.Context,
 	playlistID string,
 	offset int,
-) (string, error) {
+) (string, int, error) {
 	payload, err := c.graphQL(ctx, "fetchPlaylistContents", map[string]any{
 		"uri":    "spotify:playlist:" + playlistID,
 		"offset": offset,
 		"limit":  1,
 	})
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 
+	total := extractPlaylistTrackTotal(payload)
 	items := extractPlaylistItems(payload)
 	if len(items) == 0 {
-		return "", nil
+		return "", total, nil
 	}
 
 	itemMap, ok := items[0].(map[string]any)
 	if !ok {
-		return "", nil
+		return "", total, nil
 	}
 	uid, _ := itemMap["uid"].(string)
-	return uid, nil
+	return uid, total, nil
 }
 
 func (c *ConnectClient) RemoveTracks(ctx context.Context, playlistID string, uris []string) error {
@@ -612,6 +620,22 @@ func extractPlaylistItems(payload map[string]any) []any {
 	}
 	items, _ := content["items"].([]any)
 	return items
+}
+
+func extractPlaylistTrackTotal(payload map[string]any) int {
+	data, _ := payload["data"].(map[string]any)
+	if data == nil {
+		return 0
+	}
+	playlistV2, _ := data["playlistV2"].(map[string]any)
+	if playlistV2 == nil {
+		return 0
+	}
+	content, _ := playlistV2["content"].(map[string]any)
+	if content == nil {
+		return 0
+	}
+	return getInt(content, "totalCount")
 }
 
 func extractPlaylistTracksFromPayload(payload map[string]any) ([]Item, int) {

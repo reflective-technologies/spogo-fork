@@ -165,10 +165,6 @@ func playlistItemURIs(client spotify.API, inputs []string) ([]string, error) {
 			}
 			return nil, fmt.Errorf("invalid playlist item %s", input)
 		case "track":
-			res, err = spotify.ParseTypedID(strings.TrimSpace(input), "track")
-			if err != nil {
-				return nil, err
-			}
 			if res.URI == "" {
 				return nil, fmt.Errorf("invalid track input")
 			}
@@ -198,19 +194,24 @@ func resolveUntypedPlaylistItem(
 	if trackErr == nil && track.URI != "" {
 		return &track, nil, nil
 	}
+	if trackErr == nil {
+		trackErr = fmt.Errorf("track %s has no URI", id)
+	}
 
 	album, albumErr := client.GetAlbum(context.Background(), id)
 	if albumErr == nil && album.URI != "" {
 		return nil, &album, nil
 	}
+	if albumErr == nil {
+		albumErr = fmt.Errorf("album %s has no URI", id)
+	}
 
-	if trackErr != nil {
-		return nil, nil, trackErr
-	}
-	if albumErr != nil {
-		return nil, nil, albumErr
-	}
-	return nil, nil, fmt.Errorf("could not resolve Spotify item %s", id)
+	return nil, nil, fmt.Errorf(
+		"could not resolve Spotify item %s as track (%v) or album (%v)",
+		id,
+		trackErr,
+		albumErr,
+	)
 }
 
 func albumTrackURIs(album spotify.Item, input string) ([]string, error) {
@@ -219,10 +220,13 @@ func albumTrackURIs(album spotify.Item, input string) ([]string, error) {
 	}
 	uris := make([]string, 0, len(album.Tracks))
 	for _, track := range album.Tracks {
-		if track.URI == "" {
-			return nil, fmt.Errorf("album %s returned an invalid track", input)
+		if track.URI == "" || !strings.HasPrefix(track.URI, "spotify:track:") {
+			continue
 		}
 		uris = append(uris, track.URI)
+	}
+	if len(uris) == 0 {
+		return nil, fmt.Errorf("album %s has no playable tracks", input)
 	}
 	return uris, nil
 }
