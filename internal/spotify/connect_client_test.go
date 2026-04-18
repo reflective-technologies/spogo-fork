@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 )
 
 func TestNewConnectClient(t *testing.T) {
@@ -323,5 +324,68 @@ func TestConnectCreateCollaborativePlaylistUsesChangesEndpoint(t *testing.T) {
 	}
 	if item.ID != "p2" || item.Collaborative == nil || !*item.Collaborative {
 		t.Fatalf("unexpected item: %#v", item)
+	}
+}
+
+func TestConnectCreatePlaylistErrorsOnMissingURI(t *testing.T) {
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/playlist/v2/playlist" {
+			t.Fatalf("unexpected follow-up request: %s", req.URL.Path)
+		}
+		return jsonResponse(http.StatusOK, map[string]any{}), nil
+	})
+	client := newConnectClientForTests(transport)
+	if _, err := client.CreatePlaylist(context.Background(), "Shared", false, false); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestConnectRecentlyPlayedNormalizesDateToRFC3339(t *testing.T) {
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		var body struct {
+			OperationName string `json:"operationName"`
+		}
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		if body.OperationName != "recents" {
+			return textResponse(http.StatusNotFound, "missing"), nil
+		}
+		return jsonResponse(http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"lists": []any{
+					map[string]any{
+						"items": map[string]any{
+							"items": []any{
+								map[string]any{
+									"entity": map[string]any{
+										"uri":  "spotify:track:t1",
+										"name": "Song",
+									},
+									"addedAt": map[string]any{
+										"year":  2026,
+										"month": 4,
+										"day":   18,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}), nil
+	})
+	client := newConnectClientForTests(transport)
+	client.hashes.hashes["recents"] = "hash"
+	items, err := client.RecentlyPlayed(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("recently played: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("unexpected items: %#v", items)
+	}
+	if _, err := time.Parse(time.RFC3339, items[0].PlayedAt); err != nil {
+		t.Fatalf("expected RFC3339 timestamp, got %q: %v", items[0].PlayedAt, err)
+	}
+	if items[0].PlayedAt != "2026-04-18T00:00:00Z" {
+		t.Fatalf("unexpected timestamp: %q", items[0].PlayedAt)
 	}
 }

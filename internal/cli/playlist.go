@@ -17,13 +17,13 @@ type PlaylistCreateCmd struct {
 }
 
 type PlaylistUpdateCmd struct {
-	Playlist    string `arg:"" required:"" help:"Playlist ID/URL/URI."`
-	Name        string `help:"New playlist name."`
-	Description string `help:"New playlist description."`
-	Public      bool   `help:"Set playlist public."`
-	Private     bool   `help:"Set playlist private."`
-	Collab      bool   `help:"Set playlist collaborative."`
-	NonCollab   bool   `name:"non-collab" help:"Set playlist non-collaborative."`
+	Playlist    string  `arg:"" required:"" help:"Playlist ID/URL/URI."`
+	Name        string  `help:"New playlist name."`
+	Description *string `help:"New playlist description."`
+	Public      bool    `help:"Set playlist public."`
+	Private     bool    `help:"Set playlist private."`
+	Collab      bool    `help:"Set playlist collaborative."`
+	NonCollab   bool    `name:"non-collab" help:"Set playlist non-collaborative."`
 }
 
 type PlaylistAddCmd struct {
@@ -276,8 +276,8 @@ func (cmd *PlaylistUpdateCmd) updatePayload() (spotify.PlaylistUpdate, error) {
 		name := cmd.Name
 		update.Name = &name
 	}
-	if cmd.Description != "" {
-		description := cmd.Description
+	if cmd.Description != nil {
+		description := *cmd.Description
 		update.Description = &description
 	}
 	if cmd.Public && cmd.Private {

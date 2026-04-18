@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alecthomas/kong"
 	"github.com/steipete/spogo/internal/output"
 	"github.com/steipete/spogo/internal/spotify"
 	"github.com/steipete/spogo/internal/testutil"
@@ -140,7 +141,7 @@ func TestPlaylistUpdateCmd(t *testing.T) {
 	cmd := PlaylistUpdateCmd{
 		Playlist:    "spotify:playlist:p1",
 		Name:        "Renamed",
-		Description: "New description",
+		Description: func() *string { value := "New description"; return &value }(),
 		Private:     true,
 		Collab:      true,
 	}
@@ -149,6 +150,24 @@ func TestPlaylistUpdateCmd(t *testing.T) {
 	}
 	if out.String() == "" {
 		t.Fatalf("expected output")
+	}
+}
+
+func TestPlaylistUpdateCmdParsesEmptyDescriptionAsExplicitUpdate(t *testing.T) {
+	command := New()
+	parser, err := kong.New(command, kong.Name("spogo"), kong.Vars(VersionVars()))
+	if err != nil {
+		t.Fatalf("parser: %v", err)
+	}
+	if _, err := parser.Parse([]string{"playlist", "update", "spotify:playlist:p1", "--description="}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	update, err := command.Playlist.Update.updatePayload()
+	if err != nil {
+		t.Fatalf("update payload: %v", err)
+	}
+	if update.Description == nil || *update.Description != "" {
+		t.Fatalf("expected explicit empty description update, got %#v", update.Description)
 	}
 }
 

@@ -257,14 +257,15 @@ func (c *ConnectClient) RecentlyPlayed(ctx context.Context, limit int) ([]Recent
 		if !ok {
 			continue
 		}
-		playedAt := ""
-		// recents uses a date object in addedAt (no time-of-day).
-		if addedAt, ok := entry["addedAt"].(map[string]any); ok {
-			year := getInt(addedAt, "year")
-			month := getInt(addedAt, "month")
-			day := getInt(addedAt, "day")
-			if year > 0 && month > 0 && day > 0 {
-				playedAt = fmt.Sprintf("%04d-%02d-%02d", year, month, day)
+		playedAt := getString(entry, "playedAt")
+		if playedAt == "" {
+			if addedAt, ok := entry["addedAt"].(map[string]any); ok {
+				year := getInt(addedAt, "year")
+				month := getInt(addedAt, "month")
+				day := getInt(addedAt, "day")
+				if year > 0 && month > 0 && day > 0 {
+					playedAt = time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+				}
 			}
 		}
 		out = append(out, RecentItem{
@@ -377,15 +378,6 @@ func (c *ConnectClient) CreatePlaylist(ctx context.Context, name string, public,
 	if public {
 		return Item{}, ErrUnsupported
 	}
-	if c.session == nil {
-		return Item{}, errors.New("connect session not initialized")
-	}
-	auth, err := c.session.auth(ctx)
-	if err != nil {
-		return Item{}, err
-	}
-
-	createURL := "https://spclient.wg.spotify.com/playlist/v2/playlist"
 	createPayload := map[string]any{
 		"ops": []map[string]any{
 			{
@@ -400,39 +392,23 @@ func (c *ConnectClient) CreatePlaylist(ctx context.Context, name string, public,
 			},
 		},
 	}
-
-	body, _ := json.Marshal(createPayload)
-	req, _ := http.NewRequestWithContext(ctx, "POST", createURL, strings.NewReader(string(body)))
-	req.Header.Set("Authorization", "Bearer "+auth.AccessToken)
-	req.Header.Set("Client-Token", auth.ClientToken)
-	req.Header.Set("spotify-app-version", auth.ClientVersion)
-	req.Header.Set("Content-Type", "application/json;charset=UTF-8")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("app-platform", "WebPlayer")
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return Item{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return Item{}, fmt.Errorf("create playlist failed: %d", resp.StatusCode)
-	}
-
 	var result struct {
 		URI string `json:"uri"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
-
-	id := strings.TrimPrefix(result.URI, "spotify:playlist:")
+	if err := c.playlistRequest(ctx, http.MethodPost, "/playlist", createPayload, &result); err != nil {
+		return Item{}, err
+	}
+	playlist, err := ParseTypedID(result.URI, "playlist")
+	if err != nil || playlist.ID == "" {
+		return Item{}, errors.New("missing playlist uri")
+	}
 	if collaborative {
 		trueValue := true
-		if _, err := c.UpdatePlaylist(ctx, id, PlaylistUpdate{Collaborative: &trueValue}); err != nil {
+		if _, err := c.UpdatePlaylist(ctx, playlist.ID, PlaylistUpdate{Collaborative: &trueValue}); err != nil {
 			return Item{}, err
 		}
 	}
-	return c.playlistDetails(ctx, id)
+	return c.playlistDetails(ctx, playlist.ID)
 }
 
 func (c *ConnectClient) UpdatePlaylist(ctx context.Context, playlistID string, update PlaylistUpdate) (Item, error) {
@@ -480,6 +456,9 @@ func (c *ConnectClient) playlistDetails(ctx context.Context, playlistID string) 
 }
 
 func (c *ConnectClient) playlistRequest(ctx context.Context, method, path string, payload any, dest any) error {
+	if c.session == nil {
+		return errors.New("connect session not initialized")
+	}
 	auth, err := c.session.auth(ctx)
 	if err != nil {
 		return err
