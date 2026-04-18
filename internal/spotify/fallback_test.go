@@ -187,6 +187,11 @@ func (a apiStub) CreatePlaylist(context.Context, string, bool, bool) (Item, erro
 	return Item{}, nil
 }
 
+func (a apiStub) UpdatePlaylist(context.Context, string, PlaylistUpdate) (Item, error) {
+	a.note("UpdatePlaylist")
+	return Item{}, nil
+}
+
 func (a apiStub) AddTracks(context.Context, string, []string, *int) error {
 	a.note("AddTracks")
 	return nil

@@ -111,6 +111,47 @@ func TestPlaylistCreateCmdError(t *testing.T) {
 	}
 }
 
+func TestPlaylistUpdateCmd(t *testing.T) {
+	ctx, out, _ := testutil.NewTestContext(t, output.FormatPlain)
+	ctx.SetSpotify(&testutil.SpotifyMock{
+		UpdatePlaylistFn: func(
+			ctx context.Context,
+			playlistID string,
+			update spotify.PlaylistUpdate,
+		) (spotify.Item, error) {
+			if playlistID != "p1" {
+				t.Fatalf("playlistID = %s", playlistID)
+			}
+			if update.Name == nil || *update.Name != "Renamed" {
+				t.Fatalf("unexpected name: %#v", update.Name)
+			}
+			if update.Description == nil || *update.Description != "New description" {
+				t.Fatalf("unexpected description: %#v", update.Description)
+			}
+			if update.Public == nil || *update.Public {
+				t.Fatalf("unexpected public: %#v", update.Public)
+			}
+			if update.Collaborative == nil || !*update.Collaborative {
+				t.Fatalf("unexpected collaborative: %#v", update.Collaborative)
+			}
+			return spotify.Item{ID: playlistID, Name: "Renamed", Type: "playlist"}, nil
+		},
+	})
+	cmd := PlaylistUpdateCmd{
+		Playlist:    "spotify:playlist:p1",
+		Name:        "Renamed",
+		Description: "New description",
+		Private:     true,
+		Collab:      true,
+	}
+	if err := cmd.Run(ctx); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if out.String() == "" {
+		t.Fatalf("expected output")
+	}
+}
+
 func TestPlaylistTracksCmdError(t *testing.T) {
 	ctx, _, _ := testutil.NewTestContext(t, output.FormatPlain)
 	ctx.SetSpotify(&testutil.SpotifyMock{

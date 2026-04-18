@@ -301,6 +301,9 @@ func (dummySpotify) PlaylistTracks(context.Context, string, int, int) ([]spotify
 func (dummySpotify) CreatePlaylist(context.Context, string, bool, bool) (spotify.Item, error) {
 	return spotify.Item{}, nil
 }
+func (dummySpotify) UpdatePlaylist(context.Context, string, spotify.PlaylistUpdate) (spotify.Item, error) {
+	return spotify.Item{}, nil
+}
 func (dummySpotify) AddTracks(context.Context, string, []string, *int) error {
 	return nil
 }

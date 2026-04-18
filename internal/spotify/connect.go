@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -33,6 +34,15 @@ type ConnectClient struct {
 	web          *Client
 	searchURL    string
 	searchClient *http.Client
+}
+
+const connectPlaylistBaseURL = "https://spclient.wg.spotify.com/playlist/v2"
+
+type connectPlaylistState struct {
+	Revision      string         `json:"revision"`
+	Length        int            `json:"length"`
+	Attributes    map[string]any `json:"attributes"`
+	OwnerUsername string         `json:"ownerUsername"`
 }
 
 func NewConnectClient(opts ConnectOptions) (*ConnectClient, error) {
@@ -76,6 +86,9 @@ func (c *ConnectClient) GetArtist(ctx context.Context, id string) (Item, error) 
 }
 
 func (c *ConnectClient) GetPlaylist(ctx context.Context, id string) (Item, error) {
+	if item, err := c.playlistDetails(ctx, id); err == nil {
+		return item, nil
+	}
 	return c.playlistInfo(ctx, id)
 }
 
@@ -361,6 +374,9 @@ func (c *ConnectClient) PlaylistTracks(ctx context.Context, id string, limit, of
 }
 
 func (c *ConnectClient) CreatePlaylist(ctx context.Context, name string, public, collaborative bool) (Item, error) {
+	if public {
+		return Item{}, ErrUnsupported
+	}
 	if c.session == nil {
 		return Item{}, errors.New("connect session not initialized")
 	}
@@ -410,12 +426,155 @@ func (c *ConnectClient) CreatePlaylist(ctx context.Context, name string, public,
 	json.NewDecoder(resp.Body).Decode(&result)
 
 	id := strings.TrimPrefix(result.URI, "spotify:playlist:")
-	return Item{
-		ID:   id,
-		URI:  result.URI,
-		Name: name,
-		Type: "playlist",
-		URL:  "https://open.spotify.com/playlist/" + id,
+	if collaborative {
+		trueValue := true
+		if _, err := c.UpdatePlaylist(ctx, id, PlaylistUpdate{Collaborative: &trueValue}); err != nil {
+			return Item{}, err
+		}
+	}
+	return c.playlistDetails(ctx, id)
+}
+
+func (c *ConnectClient) UpdatePlaylist(ctx context.Context, playlistID string, update PlaylistUpdate) (Item, error) {
+	if update.Public != nil {
+		return Item{}, ErrUnsupported
+	}
+	payload, err := buildConnectPlaylistChanges(update)
+	if err != nil {
+		return Item{}, err
+	}
+	if payload == nil {
+		return c.playlistDetails(ctx, playlistID)
+	}
+	if err := c.playlistRequest(ctx, http.MethodPost, "/playlist/"+playlistID+"/changes", payload, nil); err != nil {
+		return Item{}, err
+	}
+	return c.playlistDetails(ctx, playlistID)
+}
+
+func (c *ConnectClient) playlistDetails(ctx context.Context, playlistID string) (Item, error) {
+	var raw connectPlaylistState
+	if err := c.playlistRequest(
+		ctx,
+		http.MethodGet,
+		"/playlist/"+playlistID+"?decorate=revision,length,attributes,timestamp,owner,capabilities",
+		nil,
+		&raw,
+	); err != nil {
+		return Item{}, err
+	}
+	item := Item{
+		ID:          playlistID,
+		URI:         "spotify:playlist:" + playlistID,
+		Name:        getString(raw.Attributes, "name"),
+		Type:        "playlist",
+		URL:         "https://open.spotify.com/playlist/" + playlistID,
+		Owner:       raw.OwnerUsername,
+		TotalTracks: raw.Length,
+		Description: getString(raw.Attributes, "description"),
+	}
+	if value, ok := raw.Attributes["collaborative"].(bool); ok {
+		item.Collaborative = boolPtr(value)
+	}
+	return item, nil
+}
+
+func (c *ConnectClient) playlistRequest(ctx context.Context, method, path string, payload any, dest any) error {
+	auth, err := c.session.auth(ctx)
+	if err != nil {
+		return err
+	}
+	var body *strings.Reader
+	if payload != nil {
+		body = encodeJSON(payload)
+	} else {
+		body = strings.NewReader("")
+	}
+	req, err := http.NewRequestWithContext(ctx, method, connectPlaylistBaseURL+path, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+auth.AccessToken)
+	req.Header.Set("Client-Token", auth.ClientToken)
+	req.Header.Set("spotify-app-version", auth.ClientVersion)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", defaultUserAgent())
+	req.Header.Set("app-platform", "WebPlayer")
+	if c.language != "" {
+		req.Header.Set("Accept-Language", c.language)
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return apiErrorFromResponse(resp)
+	}
+	if dest == nil {
+		return nil
+	}
+	if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func buildConnectPlaylistChanges(update PlaylistUpdate) (map[string]any, error) {
+	values := map[string]any{
+		"formatAttributes": []any{},
+		"pictureSize":      []any{},
+	}
+	noValue := []int{}
+	if update.Name != nil {
+		if strings.TrimSpace(*update.Name) == "" {
+			return nil, errors.New("playlist name cannot be empty")
+		}
+		values["name"] = *update.Name
+	}
+	if update.Description != nil {
+		if *update.Description == "" {
+			noValue = append(noValue, 2)
+		} else {
+			values["description"] = *update.Description
+		}
+	}
+	if update.Collaborative != nil {
+		values["collaborative"] = *update.Collaborative
+	}
+	if len(values) == 2 && len(noValue) == 0 {
+		return nil, nil
+	}
+	return map[string]any{
+		"deltas": []map[string]any{
+			{
+				"ops": []map[string]any{
+					{
+						"kind": "UPDATE_LIST_ATTRIBUTES",
+						"updateListAttributes": map[string]any{
+							"newAttributes": map[string]any{
+								"values":  values,
+								"noValue": noValue,
+							},
+						},
+					},
+				},
+				"info": map[string]any{
+					"source": map[string]any{
+						"client": "WEBPLAYER",
+					},
+				},
+			},
+		},
+		"wantResultingRevisions": false,
+		"wantSyncResult":         false,
+		"nonces":                 []any{},
 	}, nil
 }
 

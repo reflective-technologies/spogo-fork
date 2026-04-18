@@ -100,14 +100,16 @@ func mapArtist(a artistItem) Item {
 
 func mapPlaylist(p playlistItem) Item {
 	return Item{
-		ID:          p.ID,
-		URI:         p.URI,
-		Name:        p.Name,
-		Type:        "playlist",
-		URL:         externalURL(p.ExternalURLs),
-		Owner:       p.Owner.DisplayName,
-		TotalTracks: p.Tracks.Total,
-		Description: p.Description,
+		ID:            p.ID,
+		URI:           p.URI,
+		Name:          p.Name,
+		Type:          "playlist",
+		URL:           externalURL(p.ExternalURLs),
+		Owner:         p.Owner.DisplayName,
+		TotalTracks:   p.Tracks.Total,
+		Description:   p.Description,
+		Public:        boolPtr(p.Public),
+		Collaborative: boolPtr(p.Collaborative),
 	}
 }
 
@@ -138,6 +140,11 @@ func mapEpisode(e episodeItem) Item {
 
 func mapDevice(d deviceItem) Device {
 	return Device(d)
+}
+
+func boolPtr(value bool) *bool {
+	v := value
+	return &v
 }
 
 func artistNames(artists []artistRef) []string {

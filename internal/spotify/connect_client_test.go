@@ -222,3 +222,106 @@ func TestConnectAddTracksPositionOutOfRange(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestConnectUpdatePlaylistUsesChangesEndpoint(t *testing.T) {
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/playlist/v2/playlist/p1/changes":
+			if req.Method != http.MethodPost {
+				return textResponse(http.StatusMethodNotAllowed, "bad method"), nil
+			}
+			var body map[string]any
+			_ = json.NewDecoder(req.Body).Decode(&body)
+			deltas, _ := body["deltas"].([]any)
+			ops, _ := deltas[0].(map[string]any)["ops"].([]any)
+			op := ops[0].(map[string]any)
+			if op["kind"] != "UPDATE_LIST_ATTRIBUTES" {
+				t.Fatalf("unexpected op kind: %#v", op)
+			}
+			newAttrs := op["updateListAttributes"].(map[string]any)["newAttributes"].(map[string]any)
+			values := newAttrs["values"].(map[string]any)
+			if values["name"] != "Renamed" || values["description"] != "desc" || values["collaborative"] != false {
+				t.Fatalf("unexpected values: %#v", values)
+			}
+			return jsonResponse(http.StatusOK, map[string]any{"revision": "rev-2"}), nil
+		case "/playlist/v2/playlist/p1":
+			if req.Method != http.MethodGet {
+				return textResponse(http.StatusMethodNotAllowed, "bad method"), nil
+			}
+			if req.URL.Query().Get("decorate") != "revision,length,attributes,timestamp,owner,capabilities" {
+				t.Fatalf("unexpected query: %s", req.URL.RawQuery)
+			}
+			return jsonResponse(http.StatusOK, map[string]any{
+				"length":        3,
+				"ownerUsername": "me",
+				"attributes": map[string]any{
+					"name":          "Renamed",
+					"description":   "desc",
+					"collaborative": false,
+				},
+			}), nil
+		default:
+			return textResponse(http.StatusNotFound, req.URL.Path), nil
+		}
+	})
+	client := newConnectClientForTests(transport)
+	name := "Renamed"
+	description := "desc"
+	collaborative := false
+	item, err := client.UpdatePlaylist(context.Background(), "p1", PlaylistUpdate{
+		Name:          &name,
+		Description:   &description,
+		Collaborative: &collaborative,
+	})
+	if err != nil {
+		t.Fatalf("update playlist: %v", err)
+	}
+	if item.Name != name || item.Description != description || item.TotalTracks != 3 {
+		t.Fatalf("unexpected item: %#v", item)
+	}
+	if item.Collaborative == nil || *item.Collaborative {
+		t.Fatalf("unexpected collaborative flag: %#v", item.Collaborative)
+	}
+}
+
+func TestConnectCreateCollaborativePlaylistUsesChangesEndpoint(t *testing.T) {
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/playlist/v2/playlist":
+			if req.Method != http.MethodPost {
+				return textResponse(http.StatusMethodNotAllowed, "bad method"), nil
+			}
+			return jsonResponse(http.StatusOK, map[string]any{"uri": "spotify:playlist:p2"}), nil
+		case "/playlist/v2/playlist/p2/changes":
+			var body map[string]any
+			_ = json.NewDecoder(req.Body).Decode(&body)
+			deltas, _ := body["deltas"].([]any)
+			ops, _ := deltas[0].(map[string]any)["ops"].([]any)
+			newAttrs := ops[0].(map[string]any)["updateListAttributes"].(map[string]any)["newAttributes"].(map[string]any)
+			values := newAttrs["values"].(map[string]any)
+			if values["collaborative"] != true {
+				t.Fatalf("unexpected values: %#v", values)
+			}
+			return jsonResponse(http.StatusOK, map[string]any{"revision": "rev-3"}), nil
+		case "/playlist/v2/playlist/p2":
+			return jsonResponse(http.StatusOK, map[string]any{
+				"length":        0,
+				"ownerUsername": "me",
+				"attributes": map[string]any{
+					"name":          "Shared",
+					"collaborative": true,
+				},
+			}), nil
+		default:
+			return textResponse(http.StatusNotFound, req.URL.Path), nil
+		}
+	})
+	client := newConnectClientForTests(transport)
+	item, err := client.CreatePlaylist(context.Background(), "Shared", false, true)
+	if err != nil {
+		t.Fatalf("create playlist: %v", err)
+	}
+	if item.ID != "p2" || item.Collaborative == nil || !*item.Collaborative {
+		t.Fatalf("unexpected item: %#v", item)
+	}
+}

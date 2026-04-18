@@ -395,6 +395,29 @@ func (c *Client) CreatePlaylist(ctx context.Context, name string, public, collab
 	return mapPlaylist(raw), nil
 }
 
+func (c *Client) UpdatePlaylist(ctx context.Context, playlistID string, update PlaylistUpdate) (Item, error) {
+	payload := map[string]any{}
+	if update.Name != nil {
+		payload["name"] = *update.Name
+	}
+	if update.Public != nil {
+		payload["public"] = *update.Public
+	}
+	if update.Collaborative != nil {
+		payload["collaborative"] = *update.Collaborative
+	}
+	if update.Description != nil {
+		payload["description"] = *update.Description
+	}
+	if len(payload) == 0 {
+		return c.GetPlaylist(ctx, playlistID)
+	}
+	if err := c.put(ctx, "/playlists/"+playlistID, payload); err != nil {
+		return Item{}, err
+	}
+	return c.GetPlaylist(ctx, playlistID)
+}
+
 func (c *Client) albumTracks(
 	ctx context.Context,
 	id string,

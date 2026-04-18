@@ -207,6 +207,10 @@ func (c *fallbackClient) CreatePlaylist(ctx context.Context, name string, public
 	return c.web.CreatePlaylist(ctx, name, public, collaborative)
 }
 
+func (c *fallbackClient) UpdatePlaylist(ctx context.Context, playlistID string, update PlaylistUpdate) (Item, error) {
+	return c.web.UpdatePlaylist(ctx, playlistID, update)
+}
+
 func (c *fallbackClient) AddTracks(
 	ctx context.Context,
 	playlistID string,

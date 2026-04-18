@@ -28,6 +28,10 @@ func (c *Client) postJSON(ctx context.Context, path string, payload any, dest an
 	return c.send(ctx, http.MethodPost, path, nil, payload, dest)
 }
 
+func (c *Client) patchJSON(ctx context.Context, path string, payload any, dest any) error {
+	return c.send(ctx, http.MethodPatch, path, nil, payload, dest)
+}
+
 func (c *Client) putParams(ctx context.Context, path string, params url.Values) error {
 	return c.send(ctx, http.MethodPut, path, params, nil, nil)
 }

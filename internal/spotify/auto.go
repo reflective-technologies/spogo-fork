@@ -231,8 +231,17 @@ func (c *autoClient) PlaylistTracks(ctx context.Context, id string, limit, offse
 }
 
 func (c *autoClient) CreatePlaylist(ctx context.Context, name string, public, collaborative bool) (Item, error) {
+	if c.secondary != nil && public {
+		return c.secondary.CreatePlaylist(ctx, name, public, collaborative)
+	}
 	return autoCall(c, func(api API) (Item, error) {
 		return api.CreatePlaylist(ctx, name, public, collaborative)
+	})
+}
+
+func (c *autoClient) UpdatePlaylist(ctx context.Context, playlistID string, update PlaylistUpdate) (Item, error) {
+	return autoCall(c, func(api API) (Item, error) {
+		return api.UpdatePlaylist(ctx, playlistID, update)
 	})
 }
 
