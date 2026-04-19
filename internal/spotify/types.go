@@ -14,6 +14,8 @@ type Item struct {
 	TotalTracks   int      `json:"total_tracks,omitempty"`
 	ReleaseDate   string   `json:"release_date,omitempty"`
 	Description   string   `json:"description,omitempty"`
+	Public        *bool    `json:"public,omitempty"`
+	Collaborative *bool    `json:"collaborative,omitempty"`
 	TotalItems    int      `json:"total_items,omitempty"`
 	Followers     int      `json:"followers,omitempty"`
 	Genres        []string `json:"genres,omitempty"`
@@ -21,6 +23,13 @@ type Item struct {
 	Publisher     string   `json:"publisher,omitempty"`
 	TotalEpisodes int      `json:"total_episodes,omitempty"`
 	Tracks        []Item   `json:"tracks,omitempty"`
+}
+
+type PlaylistUpdate struct {
+	Name          *string
+	Public        *bool
+	Collaborative *bool
+	Description   *string
 }
 
 type SearchResult struct {

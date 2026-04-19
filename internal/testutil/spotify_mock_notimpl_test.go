@@ -3,6 +3,8 @@ package testutil
 import (
 	"context"
 	"testing"
+
+	"github.com/steipete/spogo/internal/spotify"
 )
 
 func TestSpotifyMockAllNotImplemented(t *testing.T) {
@@ -35,6 +37,7 @@ func TestSpotifyMockAllNotImplemented(t *testing.T) {
 	_, _, _ = m.Playlists(context.Background(), 1, 0)
 	_, _, _ = m.PlaylistTracks(context.Background(), "1", 1, 0)
 	_, _ = m.CreatePlaylist(context.Background(), "name", true, false)
+	_, _ = m.UpdatePlaylist(context.Background(), "p", spotify.PlaylistUpdate{})
 	_ = m.AddTracks(context.Background(), "p", []string{"u"}, nil)
 	_ = m.RemoveTracks(context.Background(), "p", []string{"u"})
 }

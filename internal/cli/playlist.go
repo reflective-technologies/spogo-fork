@@ -16,6 +16,16 @@ type PlaylistCreateCmd struct {
 	Collab bool   `help:"Create collaborative playlist."`
 }
 
+type PlaylistUpdateCmd struct {
+	Playlist    string  `arg:"" required:"" help:"Playlist ID/URL/URI."`
+	Name        string  `help:"New playlist name."`
+	Description *string `help:"New playlist description."`
+	Public      bool    `help:"Set playlist public."`
+	Private     bool    `help:"Set playlist private."`
+	Collab      bool    `help:"Set playlist collaborative."`
+	NonCollab   bool    `name:"non-collab" help:"Set playlist non-collaborative."`
+}
+
 type PlaylistAddCmd struct {
 	Playlist string   `arg:"" required:"" help:"Playlist ID/URL/URI."`
 	Items    []string `arg:"" required:"" help:"Track or album IDs/URLs/URIs."`
@@ -49,6 +59,28 @@ func (cmd *PlaylistCreateCmd) Run(ctx *app.Context) error {
 	}
 	plain := []string{itemPlain(item)}
 	human := []string{fmt.Sprintf("Created %s", itemHuman(ctx.Output, item))}
+	return ctx.Output.Emit(item, plain, human)
+}
+
+func (cmd *PlaylistUpdateCmd) Run(ctx *app.Context) error {
+	client, err := ctx.Spotify()
+	if err != nil {
+		return err
+	}
+	playlist, err := spotify.ParseTypedID(cmd.Playlist, "playlist")
+	if err != nil {
+		return err
+	}
+	update, err := cmd.updatePayload()
+	if err != nil {
+		return err
+	}
+	item, err := client.UpdatePlaylist(context.Background(), playlist.ID, update)
+	if err != nil {
+		return err
+	}
+	plain := []string{itemPlain(item)}
+	human := []string{fmt.Sprintf("Updated %s", itemHuman(ctx.Output, item))}
 	return ctx.Output.Emit(item, plain, human)
 }
 
@@ -236,6 +268,44 @@ func validatePosition(position *int) error {
 		return fmt.Errorf("position must be zero or greater")
 	}
 	return nil
+}
+
+func (cmd *PlaylistUpdateCmd) updatePayload() (spotify.PlaylistUpdate, error) {
+	update := spotify.PlaylistUpdate{}
+	if strings.TrimSpace(cmd.Name) != "" {
+		name := cmd.Name
+		update.Name = &name
+	}
+	if cmd.Description != nil {
+		description := *cmd.Description
+		update.Description = &description
+	}
+	if cmd.Public && cmd.Private {
+		return spotify.PlaylistUpdate{}, fmt.Errorf("cannot set both public and private")
+	}
+	if cmd.Public {
+		value := true
+		update.Public = &value
+	}
+	if cmd.Private {
+		value := false
+		update.Public = &value
+	}
+	if cmd.Collab && cmd.NonCollab {
+		return spotify.PlaylistUpdate{}, fmt.Errorf("cannot set both collab and non-collab")
+	}
+	if cmd.Collab {
+		value := true
+		update.Collaborative = &value
+	}
+	if cmd.NonCollab {
+		value := false
+		update.Collaborative = &value
+	}
+	if update.Name == nil && update.Description == nil && update.Public == nil && update.Collaborative == nil {
+		return spotify.PlaylistUpdate{}, fmt.Errorf("no playlist updates requested")
+	}
+	return update, nil
 }
 
 func trackURIs(inputs []string) ([]string, error) {

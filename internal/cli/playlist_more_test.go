@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alecthomas/kong"
 	"github.com/steipete/spogo/internal/output"
 	"github.com/steipete/spogo/internal/spotify"
 	"github.com/steipete/spogo/internal/testutil"
@@ -108,6 +109,65 @@ func TestPlaylistCreateCmdError(t *testing.T) {
 	cmd := PlaylistCreateCmd{Name: "Fail"}
 	if err := cmd.Run(ctx); err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestPlaylistUpdateCmd(t *testing.T) {
+	ctx, out, _ := testutil.NewTestContext(t, output.FormatPlain)
+	ctx.SetSpotify(&testutil.SpotifyMock{
+		UpdatePlaylistFn: func(
+			ctx context.Context,
+			playlistID string,
+			update spotify.PlaylistUpdate,
+		) (spotify.Item, error) {
+			if playlistID != "p1" {
+				t.Fatalf("playlistID = %s", playlistID)
+			}
+			if update.Name == nil || *update.Name != "Renamed" {
+				t.Fatalf("unexpected name: %#v", update.Name)
+			}
+			if update.Description == nil || *update.Description != "New description" {
+				t.Fatalf("unexpected description: %#v", update.Description)
+			}
+			if update.Public == nil || *update.Public {
+				t.Fatalf("unexpected public: %#v", update.Public)
+			}
+			if update.Collaborative == nil || !*update.Collaborative {
+				t.Fatalf("unexpected collaborative: %#v", update.Collaborative)
+			}
+			return spotify.Item{ID: playlistID, Name: "Renamed", Type: "playlist"}, nil
+		},
+	})
+	cmd := PlaylistUpdateCmd{
+		Playlist:    "spotify:playlist:p1",
+		Name:        "Renamed",
+		Description: func() *string { value := "New description"; return &value }(),
+		Private:     true,
+		Collab:      true,
+	}
+	if err := cmd.Run(ctx); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if out.String() == "" {
+		t.Fatalf("expected output")
+	}
+}
+
+func TestPlaylistUpdateCmdParsesEmptyDescriptionAsExplicitUpdate(t *testing.T) {
+	command := New()
+	parser, err := kong.New(command, kong.Name("spogo"), kong.Vars(VersionVars()))
+	if err != nil {
+		t.Fatalf("parser: %v", err)
+	}
+	if _, err := parser.Parse([]string{"playlist", "update", "spotify:playlist:p1", "--description="}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	update, err := command.Playlist.Update.updatePayload()
+	if err != nil {
+		t.Fatalf("update payload: %v", err)
+	}
+	if update.Description == nil || *update.Description != "" {
+		t.Fatalf("expected explicit empty description update, got %#v", update.Description)
 	}
 }
 

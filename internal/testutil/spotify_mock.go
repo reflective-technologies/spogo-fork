@@ -39,6 +39,7 @@ type SpotifyMock struct {
 	PlaylistsFn       func(context.Context, int, int) ([]spotify.Item, int, error)
 	PlaylistTracksFn  func(context.Context, string, int, int) ([]spotify.Item, int, error)
 	CreatePlaylistFn  func(context.Context, string, bool, bool) (spotify.Item, error)
+	UpdatePlaylistFn  func(context.Context, string, spotify.PlaylistUpdate) (spotify.Item, error)
 	AddTracksFn       func(context.Context, string, []string, *int) error
 	RemoveTracksFn    func(context.Context, string, []string) error
 	RecentlyPlayedFn  func(context.Context, int) ([]spotify.RecentItem, error)
@@ -245,6 +246,13 @@ func (m *SpotifyMock) CreatePlaylist(ctx context.Context, name string, public, c
 		return spotify.Item{}, ErrNotImplemented
 	}
 	return m.CreatePlaylistFn(ctx, name, public, collaborative)
+}
+
+func (m *SpotifyMock) UpdatePlaylist(ctx context.Context, playlistID string, update spotify.PlaylistUpdate) (spotify.Item, error) {
+	if m.UpdatePlaylistFn == nil {
+		return spotify.Item{}, ErrNotImplemented
+	}
+	return m.UpdatePlaylistFn(ctx, playlistID, update)
 }
 
 func (m *SpotifyMock) AddTracks(

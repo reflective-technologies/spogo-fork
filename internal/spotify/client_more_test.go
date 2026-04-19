@@ -26,7 +26,20 @@ func TestClientEndpoints(t *testing.T) {
 		})
 	})
 	mux.HandleFunc("/playlists/p1", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(playlistItem{ID: "p1", URI: "spotify:playlist:p1", Name: "Playlist"})
+		if r.Method == http.MethodPut {
+			body, _ := io.ReadAll(r.Body)
+			if len(body) == 0 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(playlistItem{ID: "p1", URI: "spotify:playlist:p1", Name: "Playlist", Public: false, Collaborative: true})
 	})
 	mux.HandleFunc("/shows/s1", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(showItem{ID: "s1", URI: "spotify:show:s1", Name: "Show"})
@@ -126,8 +139,15 @@ func TestClientEndpoints(t *testing.T) {
 	if _, err := client.ArtistTopTracks(context.Background(), "ar1", 1); err != nil {
 		t.Fatalf("artist top tracks: %v", err)
 	}
-	if _, err := client.GetPlaylist(context.Background(), "p1"); err != nil {
+	playlist, err := client.GetPlaylist(context.Background(), "p1")
+	if err != nil {
 		t.Fatalf("playlist: %v", err)
+	}
+	if playlist.Public == nil || *playlist.Public {
+		t.Fatalf("expected private playlist metadata, got %#v", playlist.Public)
+	}
+	if playlist.Collaborative == nil || !*playlist.Collaborative {
+		t.Fatalf("expected collaborative playlist metadata, got %#v", playlist.Collaborative)
 	}
 	if _, err := client.GetShow(context.Background(), "s1"); err != nil {
 		t.Fatalf("show: %v", err)
@@ -182,6 +202,18 @@ func TestClientEndpoints(t *testing.T) {
 	}
 	if _, err := client.CreatePlaylist(context.Background(), "Created", true, false); err != nil {
 		t.Fatalf("create playlist: %v", err)
+	}
+	name := "Renamed"
+	description := "New description"
+	public := false
+	collaborative := true
+	if _, err := client.UpdatePlaylist(context.Background(), "p1", PlaylistUpdate{
+		Name:          &name,
+		Description:   &description,
+		Public:        &public,
+		Collaborative: &collaborative,
+	}); err != nil {
+		t.Fatalf("update playlist: %v", err)
 	}
 	if err := client.RemoveTracks(context.Background(), "p1", []string{"spotify:track:t1"}); err != nil {
 		t.Fatalf("remove tracks: %v", err)

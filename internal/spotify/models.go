@@ -65,11 +65,13 @@ type albumRef struct {
 }
 
 type playlistItem struct {
-	ID          string `json:"id"`
-	URI         string `json:"uri"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Owner       struct {
+	ID            string `json:"id"`
+	URI           string `json:"uri"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	Public        bool   `json:"public"`
+	Collaborative bool   `json:"collaborative"`
+	Owner         struct {
 		DisplayName string `json:"display_name"`
 	} `json:"owner"`
 	Tracks struct {

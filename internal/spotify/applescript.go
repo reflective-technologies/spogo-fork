@@ -285,6 +285,13 @@ func (c *AppleScriptClient) CreatePlaylist(ctx context.Context, name string, pub
 	return Item{}, ErrUnsupported
 }
 
+func (c *AppleScriptClient) UpdatePlaylist(ctx context.Context, playlistID string, update PlaylistUpdate) (Item, error) {
+	if c.fallback != nil {
+		return c.fallback.UpdatePlaylist(ctx, playlistID, update)
+	}
+	return Item{}, ErrUnsupported
+}
+
 func (c *AppleScriptClient) AddTracks(
 	ctx context.Context,
 	playlistID string,
