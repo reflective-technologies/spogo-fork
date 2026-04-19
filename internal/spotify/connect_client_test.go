@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -229,11 +230,14 @@ func TestConnectUpdatePlaylistUsesChangesEndpoint(t *testing.T) {
 	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case "/playlist/v2/playlist/p1/changes":
+			if req.Method != http.MethodPost {
+				return textResponse(http.StatusMethodNotAllowed, "bad method"), nil
+			}
 			var body map[string]any
 			_ = json.NewDecoder(req.Body).Decode(&body)
 			deltas, _ := body["deltas"].([]any)
 			ops, _ := deltas[0].(map[string]any)["ops"].([]any)
-			op, _ := ops[0].(map[string]any)
+			op := ops[0].(map[string]any)
 			if op["kind"] != "UPDATE_LIST_ATTRIBUTES" {
 				t.Fatalf("unexpected op kind: %#v", op)
 			}
@@ -341,6 +345,52 @@ func TestConnectUpdatePlaylistUploadsAndRegistersImage(t *testing.T) {
 	}
 	if item.Picture != "picture-ref" {
 		t.Fatalf("unexpected item: %#v", item)
+	}
+}
+
+func TestConnectUpdatePlaylistClearsImage(t *testing.T) {
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/playlist/v2/playlist/p1/changes":
+			var body map[string]any
+			_ = json.NewDecoder(req.Body).Decode(&body)
+			deltas, _ := body["deltas"].([]any)
+			ops, _ := deltas[0].(map[string]any)["ops"].([]any)
+			newAttrs := ops[0].(map[string]any)["updateListAttributes"].(map[string]any)["newAttributes"].(map[string]any)
+			noValue := newAttrs["noValue"].([]any)
+			if len(noValue) != 1 || noValue[0] != float64(3) {
+				t.Fatalf("unexpected noValue set: %#v", noValue)
+			}
+			return jsonResponse(http.StatusOK, map[string]any{"revision": "rev-clear"}), nil
+		case "/playlist/v2/playlist/p1":
+			return jsonResponse(http.StatusOK, map[string]any{
+				"length":        0,
+				"ownerUsername": "me",
+				"attributes": map[string]any{
+					"name": "Playlist",
+				},
+			}), nil
+		default:
+			return textResponse(http.StatusNotFound, req.URL.Path), nil
+		}
+	})
+	client := newConnectClientForTests(transport)
+	item, err := client.UpdatePlaylist(context.Background(), "p1", PlaylistUpdate{ClearImage: true})
+	if err != nil {
+		t.Fatalf("update playlist: %v", err)
+	}
+	if item.Picture != "" {
+		t.Fatalf("expected picture to be cleared, got %#v", item)
+	}
+}
+
+func TestConnectUpdatePlaylistRejectsSetAndClearImage(t *testing.T) {
+	client := &ConnectClient{}
+	if _, err := client.UpdatePlaylist(context.Background(), "p1", PlaylistUpdate{
+		ImageData:  []byte{0xFF, 0xD8, 0xFF, 0xE0},
+		ClearImage: true,
+	}); err == nil || !strings.Contains(err.Error(), "cannot set and clear playlist image") {
+		t.Fatalf("expected conflict error, got %v", err)
 	}
 }
 

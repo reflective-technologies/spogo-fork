@@ -159,6 +159,58 @@ func TestAutoArtistTopTracksFallback(t *testing.T) {
 	}
 }
 
+func TestAutoUpdatePlaylistSplitsPublicAndImageUpdates(t *testing.T) {
+	ctx := context.Background()
+	calls := map[string]int{}
+	public := true
+	connect := apiStub{
+		calls: calls,
+		updatePlaylistFn: func(_ context.Context, _ string, update PlaylistUpdate) (Item, error) {
+			if update.Public != nil {
+				return Item{}, ErrUnsupported
+			}
+			if len(update.ImageData) == 0 {
+				t.Fatalf("expected image update payload in connect call")
+			}
+			if update.Name == nil || *update.Name != "Renamed" {
+				t.Fatalf("expected name in connect call, got %#v", update.Name)
+			}
+			return Item{ID: "p1", Picture: "picture-ref"}, nil
+		},
+	}
+	web := apiStub{
+		calls: calls,
+		updatePlaylistFn: func(_ context.Context, _ string, update PlaylistUpdate) (Item, error) {
+			if update.Public == nil {
+				return Item{}, ErrUnsupported
+			}
+			if len(update.ImageData) > 0 || update.ClearImage {
+				t.Fatalf("unexpected image payload in web call: %#v", update)
+			}
+			return Item{ID: "p1", Public: update.Public}, nil
+		},
+	}
+	client := NewAutoClient(connect, web)
+	name := "Renamed"
+	item, err := client.UpdatePlaylist(ctx, "p1", PlaylistUpdate{
+		Name:      &name,
+		Public:    &public,
+		ImageData: []byte{0xFF, 0xD8, 0xFF, 0xE0},
+	})
+	if err != nil {
+		t.Fatalf("update playlist: %v", err)
+	}
+	if item.Public == nil || !*item.Public {
+		t.Fatalf("expected public item from web update, got %#v", item)
+	}
+	if item.Picture != "picture-ref" {
+		t.Fatalf("expected merged picture value, got %#v", item)
+	}
+	if calls["UpdatePlaylist"] != 3 {
+		t.Fatalf("expected split update calls across clients, got %d", calls["UpdatePlaylist"])
+	}
+}
+
 func TestAutoPassThrough(t *testing.T) {
 	ctx := context.Background()
 	connectCalls := map[string]int{}

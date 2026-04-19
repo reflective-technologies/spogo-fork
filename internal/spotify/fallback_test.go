@@ -15,6 +15,7 @@ type apiStub struct {
 	libraryModifyFn   func(context.Context, string, []string, string) error
 	followedArtistsFn func(context.Context, int, string) ([]Item, int, string, error)
 	artistTopTracksFn func(context.Context, string, int) ([]Item, error)
+	updatePlaylistFn  func(context.Context, string, PlaylistUpdate) (Item, error)
 	recentlyPlayedFn  func(context.Context, int) ([]RecentItem, error)
 }
 
@@ -187,8 +188,11 @@ func (a apiStub) CreatePlaylist(context.Context, string, bool, bool) (Item, erro
 	return Item{}, nil
 }
 
-func (a apiStub) UpdatePlaylist(context.Context, string, PlaylistUpdate) (Item, error) {
+func (a apiStub) UpdatePlaylist(ctx context.Context, playlistID string, update PlaylistUpdate) (Item, error) {
 	a.note("UpdatePlaylist")
+	if a.updatePlaylistFn != nil {
+		return a.updatePlaylistFn(ctx, playlistID, update)
+	}
 	return Item{}, nil
 }
 

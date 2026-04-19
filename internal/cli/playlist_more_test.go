@@ -218,6 +218,31 @@ func TestPlaylistUpdateCmdRejectsNonJPEGImage(t *testing.T) {
 	}
 }
 
+func TestPlaylistUpdateCmdRejectsImageAndClearImage(t *testing.T) {
+	cmd := PlaylistUpdateCmd{
+		Playlist:   "spotify:playlist:p1",
+		Image:      "/tmp/cover.jpg",
+		ClearImage: true,
+	}
+	if _, err := cmd.updatePayload(); err == nil || !strings.Contains(err.Error(), "cannot set both image and clear-image") {
+		t.Fatalf("expected conflict error, got %v", err)
+	}
+}
+
+func TestPlaylistUpdateCmdSupportsClearImageOnly(t *testing.T) {
+	cmd := PlaylistUpdateCmd{
+		Playlist:   "spotify:playlist:p1",
+		ClearImage: true,
+	}
+	update, err := cmd.updatePayload()
+	if err != nil {
+		t.Fatalf("update payload: %v", err)
+	}
+	if !update.ClearImage {
+		t.Fatalf("expected clear image update, got %#v", update)
+	}
+}
+
 func TestPlaylistTracksCmdError(t *testing.T) {
 	ctx, _, _ := testutil.NewTestContext(t, output.FormatPlain)
 	ctx.SetSpotify(&testutil.SpotifyMock{
