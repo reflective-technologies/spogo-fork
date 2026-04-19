@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -168,6 +169,52 @@ func TestPlaylistUpdateCmdParsesEmptyDescriptionAsExplicitUpdate(t *testing.T) {
 	}
 	if update.Description == nil || *update.Description != "" {
 		t.Fatalf("expected explicit empty description update, got %#v", update.Description)
+	}
+}
+
+func TestPlaylistUpdateCmdLoadsJPEGImage(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "playlist-cover-*.jpg")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	jpeg := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00, 0x01, 0x02, 0x00}
+	if _, err := file.Write(jpeg); err != nil {
+		t.Fatalf("write jpeg: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close jpeg: %v", err)
+	}
+	cmd := PlaylistUpdateCmd{
+		Playlist: "spotify:playlist:p1",
+		Image:    file.Name(),
+	}
+	update, err := cmd.updatePayload()
+	if err != nil {
+		t.Fatalf("update payload: %v", err)
+	}
+	if string(update.ImageData) != string(jpeg) {
+		t.Fatalf("unexpected image data: %v", update.ImageData)
+	}
+}
+
+func TestPlaylistUpdateCmdRejectsNonJPEGImage(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "playlist-cover-*.png")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'}
+	if _, err := file.Write(png); err != nil {
+		t.Fatalf("write png: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close png: %v", err)
+	}
+	cmd := PlaylistUpdateCmd{
+		Playlist: "spotify:playlist:p1",
+		Image:    file.Name(),
+	}
+	if _, err := cmd.updatePayload(); err == nil || !strings.Contains(err.Error(), "playlist image must be a JPEG") {
+		t.Fatalf("expected JPEG validation error, got %v", err)
 	}
 }
 

@@ -14,6 +14,7 @@ type Item struct {
 	TotalTracks   int      `json:"total_tracks,omitempty"`
 	ReleaseDate   string   `json:"release_date,omitempty"`
 	Description   string   `json:"description,omitempty"`
+	Picture       string   `json:"picture,omitempty"`
 	Public        *bool    `json:"public,omitempty"`
 	Collaborative *bool    `json:"collaborative,omitempty"`
 	TotalItems    int      `json:"total_items,omitempty"`
@@ -30,6 +31,8 @@ type PlaylistUpdate struct {
 	Public        *bool
 	Collaborative *bool
 	Description   *string
+	ImageData     []byte
+	ClearImage    bool
 }
 
 type SearchResult struct {
