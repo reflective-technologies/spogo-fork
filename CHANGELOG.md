@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0-kiosk.3 - 2026-04-19
+
+- Add `playlist update` CLI support for renaming and editing playlist metadata in place
+- Route playlist metadata writes through the connect playlist changes endpoint
+- Support collaborative playlist create/update in the connect engine
+- Normalize connect recently-played timestamps to RFC3339
+- Error cleanly on malformed or missing connect playlist creation response URIs
+
 ## 0.2.0 - 2026-01-07
 
 - Add `applescript` engine for direct Spotify.app control on macOS (thanks @adam91holt)
