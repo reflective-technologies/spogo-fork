@@ -1,6 +1,7 @@
 package spotify
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -415,7 +416,22 @@ func (c *ConnectClient) UpdatePlaylist(ctx context.Context, playlistID string, u
 	if update.Public != nil {
 		return Item{}, ErrUnsupported
 	}
-	payload, err := buildConnectPlaylistChanges(update)
+	if len(update.ImageData) > 0 && update.ClearImage {
+		return Item{}, errors.New("cannot set and clear playlist image in the same update")
+	}
+	var picture *string
+	if len(update.ImageData) > 0 {
+		uploadToken, err := c.uploadPlaylistImage(ctx, update.ImageData)
+		if err != nil {
+			return Item{}, err
+		}
+		registeredPicture, err := c.registerPlaylistImage(ctx, playlistID, uploadToken)
+		if err != nil {
+			return Item{}, err
+		}
+		picture = &registeredPicture
+	}
+	payload, err := buildConnectPlaylistChanges(update, picture)
 	if err != nil {
 		return Item{}, err
 	}
@@ -448,6 +464,7 @@ func (c *ConnectClient) playlistDetails(ctx context.Context, playlistID string) 
 		Owner:       raw.OwnerUsername,
 		TotalTracks: raw.Length,
 		Description: getString(raw.Attributes, "description"),
+		Picture:     getString(raw.Attributes, "picture"),
 	}
 	if value, ok := raw.Attributes["collaborative"].(bool); ok {
 		item.Collaborative = boolPtr(value)
@@ -505,7 +522,74 @@ func (c *ConnectClient) playlistRequest(ctx context.Context, method, path string
 	return nil
 }
 
-func buildConnectPlaylistChanges(update PlaylistUpdate) (map[string]any, error) {
+func (c *ConnectClient) uploadPlaylistImage(ctx context.Context, jpeg []byte) (string, error) {
+	if c.session == nil {
+		return "", errors.New("connect session not initialized")
+	}
+	auth, err := c.session.auth(ctx)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		"https://image-upload.spotify.com/v4/playlist",
+		bytes.NewReader(jpeg),
+	)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+auth.AccessToken)
+	req.Header.Set("Client-Token", auth.ClientToken)
+	req.Header.Set("spotify-app-version", auth.ClientVersion)
+	req.Header.Set("Content-Type", "image/jpeg")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", defaultUserAgent())
+	req.Header.Set("app-platform", "WebPlayer")
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", apiErrorFromResponse(resp)
+	}
+	var payload struct {
+		UploadToken string `json:"uploadToken"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", err
+	}
+	if payload.UploadToken == "" {
+		return "", errors.New("missing upload token")
+	}
+	return payload.UploadToken, nil
+}
+
+func (c *ConnectClient) registerPlaylistImage(
+	ctx context.Context,
+	playlistID string,
+	uploadToken string,
+) (string, error) {
+	var payload struct {
+		Picture string `json:"picture"`
+	}
+	if err := c.playlistRequest(
+		ctx,
+		http.MethodPost,
+		"/playlist/"+playlistID+"/register-image",
+		map[string]any{"uploadToken": uploadToken},
+		&payload,
+	); err != nil {
+		return "", err
+	}
+	if payload.Picture == "" {
+		return "", errors.New("missing playlist picture")
+	}
+	return payload.Picture, nil
+}
+
+func buildConnectPlaylistChanges(update PlaylistUpdate, picture *string) (map[string]any, error) {
 	values := map[string]any{
 		"formatAttributes": []any{},
 		"pictureSize":      []any{},
@@ -516,6 +600,12 @@ func buildConnectPlaylistChanges(update PlaylistUpdate) (map[string]any, error) 
 			return nil, errors.New("playlist name cannot be empty")
 		}
 		values["name"] = *update.Name
+	}
+	if picture != nil {
+		values["picture"] = *picture
+	}
+	if update.ClearImage {
+		noValue = append(noValue, 3)
 	}
 	if update.Description != nil {
 		if *update.Description == "" {

@@ -396,6 +396,9 @@ func (c *Client) CreatePlaylist(ctx context.Context, name string, public, collab
 }
 
 func (c *Client) UpdatePlaylist(ctx context.Context, playlistID string, update PlaylistUpdate) (Item, error) {
+	if len(update.ImageData) > 0 || update.ClearImage {
+		return Item{}, ErrUnsupported
+	}
 	payload := map[string]any{}
 	if update.Name != nil {
 		payload["name"] = *update.Name

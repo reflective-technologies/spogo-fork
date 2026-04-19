@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"os"
 	"strings"
 
 	"github.com/steipete/spogo/internal/app"
@@ -20,6 +22,8 @@ type PlaylistUpdateCmd struct {
 	Playlist    string  `arg:"" required:"" help:"Playlist ID/URL/URI."`
 	Name        string  `help:"New playlist name."`
 	Description *string `help:"New playlist description."`
+	Image       string  `help:"Path to a JPEG playlist cover image to upload." type:"path"`
+	ClearImage  bool    `name:"clear-image" help:"Remove the custom playlist cover image."`
 	Public      bool    `help:"Set playlist public."`
 	Private     bool    `help:"Set playlist private."`
 	Collab      bool    `help:"Set playlist collaborative."`
@@ -302,7 +306,23 @@ func (cmd *PlaylistUpdateCmd) updatePayload() (spotify.PlaylistUpdate, error) {
 		value := false
 		update.Collaborative = &value
 	}
-	if update.Name == nil && update.Description == nil && update.Public == nil && update.Collaborative == nil {
+	if strings.TrimSpace(cmd.Image) != "" && cmd.ClearImage {
+		return spotify.PlaylistUpdate{}, fmt.Errorf("cannot set both image and clear-image")
+	}
+	if strings.TrimSpace(cmd.Image) != "" {
+		imageData, err := os.ReadFile(cmd.Image)
+		if err != nil {
+			return spotify.PlaylistUpdate{}, err
+		}
+		if detected := http.DetectContentType(imageData); detected != "image/jpeg" {
+			return spotify.PlaylistUpdate{}, fmt.Errorf("playlist image must be a JPEG, got %s", detected)
+		}
+		update.ImageData = imageData
+	}
+	if cmd.ClearImage {
+		update.ClearImage = true
+	}
+	if update.Name == nil && update.Description == nil && update.Public == nil && update.Collaborative == nil && len(update.ImageData) == 0 && !update.ClearImage {
 		return spotify.PlaylistUpdate{}, fmt.Errorf("no playlist updates requested")
 	}
 	return update, nil

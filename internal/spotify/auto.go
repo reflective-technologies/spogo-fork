@@ -240,6 +240,27 @@ func (c *autoClient) CreatePlaylist(ctx context.Context, name string, public, co
 }
 
 func (c *autoClient) UpdatePlaylist(ctx context.Context, playlistID string, update PlaylistUpdate) (Item, error) {
+	if update.Public != nil && (len(update.ImageData) > 0 || update.ClearImage) {
+		withoutPublic := update
+		withoutPublic.Public = nil
+		primaryItem, err := autoCall(c, func(api API) (Item, error) {
+			return api.UpdatePlaylist(ctx, playlistID, withoutPublic)
+		})
+		if err != nil {
+			return Item{}, err
+		}
+		publicOnly := PlaylistUpdate{Public: update.Public}
+		item, err := autoCall(c, func(api API) (Item, error) {
+			return api.UpdatePlaylist(ctx, playlistID, publicOnly)
+		})
+		if err != nil {
+			return Item{}, err
+		}
+		if item.Picture == "" {
+			item.Picture = primaryItem.Picture
+		}
+		return item, nil
+	}
 	return autoCall(c, func(api API) (Item, error) {
 		return api.UpdatePlaylist(ctx, playlistID, update)
 	})

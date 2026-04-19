@@ -3,6 +3,7 @@ package spotify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -214,6 +215,9 @@ func TestClientEndpoints(t *testing.T) {
 		Collaborative: &collaborative,
 	}); err != nil {
 		t.Fatalf("update playlist: %v", err)
+	}
+	if _, err := client.UpdatePlaylist(context.Background(), "p1", PlaylistUpdate{ImageData: []byte{0xFF, 0xD8, 0xFF, 0xE0}}); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("expected image update to be unsupported in web client, got %v", err)
 	}
 	if err := client.RemoveTracks(context.Background(), "p1", []string{"spotify:track:t1"}); err != nil {
 		t.Fatalf("remove tracks: %v", err)
