@@ -137,6 +137,7 @@ spogo [global flags] <command> [args]
 - Overrides:
   - `SPOGO_TOTP_SECRET_URL` (http(s) or `file://...`)
   - `SPOGO_CONNECT_VERSION` (connect playback client version)
+  - `SPOGO_PROXY_URL` + `SPOGO_PROXY_TOKEN` (proxy mode: a blind proxy holds the cookies and access token; see README)
 
 ## Examples
 

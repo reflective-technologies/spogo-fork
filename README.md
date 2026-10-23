@@ -74,6 +74,7 @@ Env overrides:
 
 - `SPOGO_TOTP_SECRET_URL` override TOTP secret source (http(s) or `file://...`)
 - `SPOGO_CONNECT_VERSION` override connect client version sent to playback endpoints
+- `SPOGO_PROXY_URL` + `SPOGO_PROXY_TOKEN` proxy mode, see below (environment only, never flags)
 
 Commands:
 
@@ -97,6 +98,22 @@ spogo auth import --browser chrome
 ```
 
 Defaults: Chrome + Default profile. Cookies are stored under your config directory (per profile).
+
+## Proxy mode
+
+When `SPOGO_PROXY_URL` (for example `http://127.0.0.1:3210/proxy`) and `SPOGO_PROXY_TOKEN` are set, spogo holds no Spotify credentials. No cookie file or browser access is used. The proxy keeps the account cookies, authenticates upstream requests, and withholds the access token.
+
+Requests that need an account credential go to `<SPOGO_PROXY_URL>/<provider><path>` with an `x-mom-proxy-token` header:
+
+| Host | Provider |
+| --- | --- |
+| `open.spotify.com/api/token` | `spotify-token` |
+| `api.spotify.com` | `spotify-api` |
+| `api-partner.spotify.com` | `spotify-partner` |
+| `spclient.wg.spotify.com` | `spotify-spclient` |
+| `image-upload.spotify.com` | `spotify-upload` |
+
+Requests that carry no account credential (`open.spotify.com/` page, `clienttoken.spotify.com`, CDN assets, TOTP secret mirrors) go straight to their hosts. Other `*.spotify.com` hosts, such as the playback endpoints, are refused. Use the `connect` engine; playback is not available in proxy mode. The web-player device id is random per process. `auth status` fetches a token through the proxy and exits 3 when the proxy session is not logged in.
 
 ## Auto engine notes
 

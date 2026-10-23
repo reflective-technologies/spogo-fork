@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add proxy mode (`SPOGO_PROXY_URL` + `SPOGO_PROXY_TOKEN`): credentialed Spotify hosts are reached through a blind proxy that holds the cookies and access token; spogo needs no cookie file
+- `auth status` in proxy mode checks the proxy session
+
 ## 0.2.0-kiosk.3 - 2026-04-19
 
 - Add `playlist update` CLI support for renaming and editing playlist metadata in place

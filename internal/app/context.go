@@ -1,8 +1,10 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -37,6 +39,10 @@ type Context struct {
 	ProfileKey string
 	Output     *output.Writer
 
+	// proxy is set by SPOGO_PROXY_URL + SPOGO_PROXY_TOKEN (environment only, so
+	// the capability token never appears in argv). A proxy holds the account
+	// cookies and access tokens; spogo then needs neither.
+	proxy         *spotify.ProxyTransport
 	spotifyClient spotify.API
 }
 
@@ -85,6 +91,13 @@ func NewContext(settings Settings) (*Context, error) {
 	if err != nil {
 		return nil, err
 	}
+	var proxy *spotify.ProxyTransport
+	if rawURL := strings.TrimSpace(os.Getenv("SPOGO_PROXY_URL")); rawURL != "" {
+		proxy, err = spotify.NewProxyTransport(rawURL, os.Getenv("SPOGO_PROXY_TOKEN"))
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &Context{
 		Settings:   settings,
 		Config:     cfg,
@@ -92,6 +105,7 @@ func NewContext(settings Settings) (*Context, error) {
 		Profile:    profile,
 		ProfileKey: profileKey,
 		Output:     writer,
+		proxy:      proxy,
 	}, nil
 }
 
@@ -112,80 +126,37 @@ func (c *Context) Spotify() (spotify.API, error) {
 	}
 	switch engine {
 	case "connect":
-		client, err := spotify.NewConnectClient(spotify.ConnectOptions{
-			Source:   source,
-			Market:   c.Profile.Market,
-			Language: c.Profile.Language,
-			Device:   c.Profile.Device,
-			Timeout:  c.Settings.Timeout,
-		})
+		client, err := spotify.NewConnectClient(c.connectOptions(source))
 		if err != nil {
 			return nil, err
 		}
 		c.spotifyClient = client
 		return client, nil
 	case "web":
-		provider := spotify.CookieTokenProvider{
-			Source: source,
-		}
-		webClient, err := spotify.NewClient(spotify.Options{
-			TokenProvider: provider,
-			Market:        c.Profile.Market,
-			Language:      c.Profile.Language,
-			Device:        c.Profile.Device,
-			Timeout:       c.Settings.Timeout,
-		})
+		webClient, err := spotify.NewClient(c.webOptions(source))
 		if err != nil {
 			return nil, err
 		}
 		client := spotify.API(webClient)
-		if connectClient, connectErr := spotify.NewConnectClient(spotify.ConnectOptions{
-			Source:   source,
-			Market:   c.Profile.Market,
-			Language: c.Profile.Language,
-			Device:   c.Profile.Device,
-			Timeout:  c.Settings.Timeout,
-		}); connectErr == nil {
+		if connectClient, connectErr := spotify.NewConnectClient(c.connectOptions(source)); connectErr == nil {
 			client = spotify.NewPlaybackFallbackClient(webClient, connectClient)
 		}
 		c.spotifyClient = client
 		return client, nil
 	case "auto":
-		webClient, err := spotify.NewClient(spotify.Options{
-			TokenProvider: spotify.CookieTokenProvider{
-				Source: source,
-			},
-			Market:   c.Profile.Market,
-			Language: c.Profile.Language,
-			Device:   c.Profile.Device,
-			Timeout:  c.Settings.Timeout,
-		})
+		webClient, err := spotify.NewClient(c.webOptions(source))
 		if err != nil {
 			return nil, err
 		}
 		client := spotify.API(webClient)
-		if connectClient, connectErr := spotify.NewConnectClient(spotify.ConnectOptions{
-			Source:   source,
-			Market:   c.Profile.Market,
-			Language: c.Profile.Language,
-			Device:   c.Profile.Device,
-			Timeout:  c.Settings.Timeout,
-		}); connectErr == nil {
+		if connectClient, connectErr := spotify.NewConnectClient(c.connectOptions(source)); connectErr == nil {
 			client = spotify.NewAutoClient(connectClient, webClient)
 		}
 		c.spotifyClient = client
 		return client, nil
 	case "applescript":
 		var fallback spotify.API
-		if webClient, webErr := spotify.NewClient(spotify.Options{
-			TokenProvider: spotify.CookieTokenProvider{
-				Source: source,
-			},
-			Market:   c.Profile.Market,
-			Language: c.Profile.Language,
-			Device:   c.Profile.Device,
-			Timeout:  c.Settings.Timeout,
-		}); webErr == nil {
+		if webClient, webErr := spotify.NewClient(c.webOptions(source)); webErr == nil {
 			fallback = webClient
 		}
 		client, err := spotify.NewAppleScriptClient(spotify.AppleScriptOptions{
@@ -201,6 +172,54 @@ func (c *Context) Spotify() (spotify.API, error) {
 	}
 }
 
+func (c *Context) connectOptions(source cookies.Source) spotify.ConnectOptions {
+	return spotify.ConnectOptions{
+		Source:    source,
+		Market:    c.Profile.Market,
+		Language:  c.Profile.Language,
+		Device:    c.Profile.Device,
+		Timeout:   c.Settings.Timeout,
+		Transport: c.transport(),
+	}
+}
+
+func (c *Context) webOptions(source cookies.Source) spotify.Options {
+	provider := spotify.CookieTokenProvider{Source: source}
+	if c.proxy != nil {
+		provider.Client = &http.Client{Transport: c.proxy, Timeout: c.EnsureTimeout()}
+	}
+	return spotify.Options{
+		TokenProvider: provider,
+		Market:        c.Profile.Market,
+		Language:      c.Profile.Language,
+		Device:        c.Profile.Device,
+		Timeout:       c.Settings.Timeout,
+		Transport:     c.transport(),
+	}
+}
+
+func (c *Context) transport() http.RoundTripper {
+	if c.proxy == nil {
+		return nil
+	}
+	return c.proxy
+}
+
+// Proxied reports whether a proxy holds the Spotify credentials.
+func (c *Context) Proxied() bool {
+	return c != nil && c.proxy != nil
+}
+
+// ProxyToken fetches a web-player token through the proxy. The proxy withholds
+// the real access token; the call proves the proxy holds a working session.
+func (c *Context) ProxyToken(ctx context.Context) (spotify.Token, error) {
+	source, err := c.cookieSource()
+	if err != nil {
+		return spotify.Token{}, err
+	}
+	return c.webOptions(source).TokenProvider.Token(ctx)
+}
+
 func (c *Context) SetSpotify(client spotify.API) {
 	if c == nil {
 		return
@@ -209,6 +228,9 @@ func (c *Context) SetSpotify(client spotify.API) {
 }
 
 func (c *Context) cookieSource() (cookies.Source, error) {
+	if c.proxy != nil {
+		return cookies.NewDeviceSource()
+	}
 	if c.Profile.CookiePath != "" {
 		return cookies.FileSource{Path: c.Profile.CookiePath}, nil
 	}

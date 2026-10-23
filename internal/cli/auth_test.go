@@ -1,15 +1,21 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/steipete/spogo/internal/app"
 	"github.com/steipete/spogo/internal/config"
 	"github.com/steipete/spogo/internal/cookies"
 	"github.com/steipete/spogo/internal/output"
+	"github.com/steipete/spogo/internal/spotify"
 	"github.com/steipete/spogo/internal/testutil"
 	"github.com/steipete/sweetcookie"
 )
@@ -145,5 +151,46 @@ func TestTrashFileSuccess(t *testing.T) {
 	t.Setenv("PATH", dir)
 	if err := trashFile("/tmp/missing"); err != nil {
 		t.Fatalf("expected success")
+	}
+}
+
+func TestAuthStatusProxyMode(t *testing.T) {
+	restore := spotify.SetTotpSecretFetcher(func(ctx context.Context) (int, []byte, error) {
+		return 1, []byte{1, 2, 3, 4}, nil
+	})
+	defer restore()
+	anonymous := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"accessToken":"placeholder","clientId":"c","isAnonymous":%t,"expiresIn":3600}`, anonymous)
+	}))
+	defer srv.Close()
+	t.Setenv("SPOGO_PROXY_URL", srv.URL+"/proxy")
+	t.Setenv("SPOGO_PROXY_TOKEN", "capability")
+	newCtx := func() (*app.Context, *bytes.Buffer) {
+		ctx, out, _ := testutil.NewTestContext(t, output.FormatJSON)
+		real, err := app.NewContext(app.Settings{ConfigPath: filepath.Join(t.TempDir(), "config.toml"), Format: output.FormatJSON})
+		if err != nil {
+			t.Fatalf("new context: %v", err)
+		}
+		real.Output = ctx.Output
+		return real, out
+	}
+
+	ctx, out := newCtx()
+	if err := (&AuthStatusCmd{}).Run(ctx); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(out.String(), `"authenticated": true`) || !strings.Contains(out.String(), `"source": "proxy"`) {
+		t.Fatalf("unexpected output: %s", out.String())
+	}
+
+	anonymous = true
+	ctx, out = newCtx()
+	err := (&AuthStatusCmd{}).Run(ctx)
+	if err == nil || app.ExitCode(err) != 3 {
+		t.Fatalf("expected exit 3 for anonymous session, got %v", err)
+	}
+	if !strings.Contains(out.String(), `"authenticated": false`) {
+		t.Fatalf("unexpected output: %s", out.String())
 	}
 }
