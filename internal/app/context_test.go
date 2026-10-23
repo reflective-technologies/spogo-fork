@@ -2,8 +2,11 @@ package app
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -310,4 +313,64 @@ func (dummySpotify) AddTracks(context.Context, string, []string, *int) error {
 func (dummySpotify) RemoveTracks(context.Context, string, []string) error { return nil }
 func (dummySpotify) RecentlyPlayed(context.Context, int) ([]spotify.RecentItem, error) {
 	return nil, nil
+}
+
+func TestNewContextProxyModeFromEnv(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.toml")
+	t.Setenv("SPOGO_PROXY_URL", "http://127.0.0.1:3210/proxy")
+	t.Setenv("SPOGO_PROXY_TOKEN", "")
+	if _, err := NewContext(Settings{ConfigPath: cfgPath, Format: output.FormatPlain}); err == nil {
+		t.Fatalf("expected error without proxy token")
+	}
+	t.Setenv("SPOGO_PROXY_TOKEN", "capability")
+	ctx, err := NewContext(Settings{ConfigPath: cfgPath, Format: output.FormatPlain})
+	if err != nil {
+		t.Fatalf("new context: %v", err)
+	}
+	if !ctx.Proxied() {
+		t.Fatalf("expected proxy mode")
+	}
+	if _, err := ctx.Spotify(); err != nil {
+		t.Fatalf("spotify client must not need cookies in proxy mode: %v", err)
+	}
+	t.Setenv("SPOGO_PROXY_URL", "")
+	ctx, err = NewContext(Settings{ConfigPath: cfgPath, Format: output.FormatPlain})
+	if err != nil {
+		t.Fatalf("new context: %v", err)
+	}
+	if ctx.Proxied() {
+		t.Fatalf("expected direct mode")
+	}
+}
+
+func TestProxyTokenGoesThroughProxy(t *testing.T) {
+	restore := spotify.SetTotpSecretFetcher(func(ctx context.Context) (int, []byte, error) {
+		return 1, []byte{1, 2, 3, 4}, nil
+	})
+	t.Cleanup(restore)
+	var gotPath, gotToken, gotCookie string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotToken, gotCookie = r.URL.Path, r.Header.Get("x-mom-proxy-token"), r.Header.Get("Cookie")
+		_, _ = w.Write([]byte(`{"accessToken":"placeholder","clientId":"c","isAnonymous":false,"expiresIn":3600}`))
+	}))
+	defer srv.Close()
+	t.Setenv("SPOGO_PROXY_URL", srv.URL+"/proxy")
+	t.Setenv("SPOGO_PROXY_TOKEN", "capability")
+	ctx, err := NewContext(Settings{ConfigPath: filepath.Join(t.TempDir(), "config.toml"), Format: output.FormatPlain})
+	if err != nil {
+		t.Fatalf("new context: %v", err)
+	}
+	token, err := ctx.ProxyToken(context.Background())
+	if err != nil {
+		t.Fatalf("proxy token: %v", err)
+	}
+	if token.AccessToken != "placeholder" || token.Anonymous {
+		t.Fatalf("unexpected token: %#v", token)
+	}
+	if gotPath != "/proxy/spotify-token/api/token" || gotToken != "capability" {
+		t.Fatalf("token request: path=%s token=%s", gotPath, gotToken)
+	}
+	if strings.Contains(gotCookie, "sp_dc") {
+		t.Fatalf("account cookie leaked: %s", gotCookie)
+	}
 }

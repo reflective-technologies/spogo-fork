@@ -18,6 +18,7 @@ type Options struct {
 	Language      string
 	Device        string
 	Timeout       time.Duration
+	Transport     http.RoundTripper
 }
 
 type Client struct {
@@ -46,7 +47,7 @@ func NewClient(opts Options) (*Client, error) {
 		if timeout == 0 {
 			timeout = 10 * time.Second
 		}
-		client = &http.Client{Timeout: timeout}
+		client = &http.Client{Timeout: timeout, Transport: opts.Transport}
 	}
 	return &Client{
 		baseURL:  baseURL,

@@ -16,11 +16,12 @@ import (
 )
 
 type ConnectOptions struct {
-	Source   cookies.Source
-	Market   string
-	Language string
-	Device   string
-	Timeout  time.Duration
+	Source    cookies.Source
+	Market    string
+	Language  string
+	Device    string
+	Timeout   time.Duration
+	Transport http.RoundTripper
 }
 
 type ConnectClient struct {
@@ -54,7 +55,7 @@ func NewConnectClient(opts ConnectOptions) (*ConnectClient, error) {
 	if timeout == 0 {
 		timeout = 10 * time.Second
 	}
-	httpClient := &http.Client{Timeout: timeout}
+	httpClient := &http.Client{Timeout: timeout, Transport: opts.Transport}
 	session := &connectSession{
 		source: opts.Source,
 		client: httpClient,

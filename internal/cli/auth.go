@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -35,7 +36,15 @@ type authStatusPayload struct {
 	Source      string `json:"source"`
 }
 
+type proxyAuthStatusPayload struct {
+	Source        string `json:"source"`
+	Authenticated bool   `json:"authenticated"`
+}
+
 func (cmd *AuthStatusCmd) Run(ctx *app.Context) error {
+	if ctx.Proxied() {
+		return proxyAuthStatus(ctx)
+	}
 	cookiesList, sourceLabel, err := readCookies(ctx)
 	if err != nil {
 		return err
@@ -60,6 +69,26 @@ func (cmd *AuthStatusCmd) Run(ctx *app.Context) error {
 		human = append(human, "Session cookie: missing sp_dc")
 	}
 	return ctx.Output.Emit(payload, plain, human)
+}
+
+func proxyAuthStatus(ctx *app.Context) error {
+	token, err := ctx.ProxyToken(context.Background())
+	if err != nil {
+		return err
+	}
+	payload := proxyAuthStatusPayload{Source: "proxy", Authenticated: !token.Anonymous}
+	plain := []string{fmt.Sprintf("%s\t%t", payload.Source, payload.Authenticated)}
+	human := []string{"Spotify session: proxy"}
+	if !payload.Authenticated {
+		human = append(human, "Not logged in: the proxy session is anonymous")
+	}
+	if err := ctx.Output.Emit(payload, plain, human); err != nil {
+		return err
+	}
+	if !payload.Authenticated {
+		return app.WrapExit(3, errors.New("proxy session is not logged in"))
+	}
+	return nil
 }
 
 func (cmd *AuthImportCmd) Run(ctx *app.Context) error {
