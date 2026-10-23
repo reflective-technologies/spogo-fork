@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0-kiosk.5 - 2026-10-23
 
 - Add proxy mode (`SPOGO_PROXY_URL` + `SPOGO_PROXY_TOKEN`): credentialed Spotify hosts are reached through a blind proxy that holds the cookies and access token; spogo needs no cookie file
 - `auth status` in proxy mode checks the proxy session
